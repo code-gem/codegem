@@ -9,7 +9,7 @@ pub mod rv64;
 pub mod x64;
 pub mod urcl;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum VReg {
     RealRegister(usize),
     Virtual(usize),
