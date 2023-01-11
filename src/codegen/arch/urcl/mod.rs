@@ -680,7 +680,6 @@ impl InstructionSelector for UrclSelector {
     ) {
         let rd = match result {
             Some(val) => {
-                println!("here");
                 let dest = VReg::Virtual(self.vreg_index);
                 self.vreg_index += 1;
                 self.value_map.insert(val, dest);
