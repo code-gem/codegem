@@ -4,6 +4,10 @@ version = "0.1.3"
 edition = "2021"
 description = "A small code generation library"
 license = "MPL-2.0"
+readme = "README.md"
+repository = "https://github.com/code-gem/codegem/"
+keywords = ["codegen", "backend", "compiler", "code-generation"]
+categories = ["compilers"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
