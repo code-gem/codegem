@@ -406,7 +406,7 @@ impl Display for Value {
 /// builder.switch_to_block(entry);
 /// let val = builder.push_instruction(
 ///     &Type::Integer(true, 32),
-///     Operation::Integer(true, 69u32.to_le_bytes().to_vec())
+///     69u32.to_integer_operation()
 /// )?;
 /// builder.set_terminator(Terminator::Return(val));
 /// let module = builder.build();
@@ -704,7 +704,7 @@ impl ModuleBuilder {
     /// # fn testy(builder: &mut ModuleBuilder) -> Option<()> {
     /// builder.push_instruction(
     ///     &Type::Integer(true, 32),
-    ///     Operation::Integer(true, 69i32.to_le_bytes().to_vec())
+    ///     69i32.to_integer_operation()
     /// );
     /// # None
     /// # }
