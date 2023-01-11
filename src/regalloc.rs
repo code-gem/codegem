@@ -1,10 +1,34 @@
 use std::{collections::{HashMap, HashSet}, ops::Range};
 
-use super::{
-    arch::{Instr, VReg},
-    RegisterAllocator,
-};
+use super::arch::{Instr, VReg};
 
+/// [`RegisterAllocator`] is the trait register allocators implement. Implementations of this trait
+/// can be used wherever a register allocator is needed.
+pub trait RegisterAllocator: Default {
+    /// Appends a usage of the given register. The register passed in must be a
+    /// [`VReg::Virtual`].
+    fn add_use(&mut self, reg: VReg);
+
+    /// Appends a definition of the given register. Note that this does not redefine the register,
+    /// so it can be used multiple times. The register passed in must be a [`VReg::Virtual`].
+    fn add_def(&mut self, reg: VReg);
+
+    /// Forces the given register to be equivalent to the constraint. Note that the register passed
+    /// in must be a [`VReg::Virtual`] whereas the constraint passed in must be a
+    /// [`VReg::RealRegister`].
+    fn force_same(&mut self, reg: VReg, constraint: VReg);
+
+    /// Tells the register allocator that the current live step has ended and to proceed to the
+    /// next one.
+    fn next_live_step(&mut self);
+
+    /// Performs register allocation for the given [`Instr`].
+    fn allocate_regs<I>(self) -> HashMap<VReg, VReg>
+    where
+        I: Instr;
+}
+
+/// [`RegAlloc`] is the default provided register allocator.
 #[derive(Default)]
 pub struct RegAlloc {
     live_step_count: usize,
@@ -71,8 +95,8 @@ impl RegisterAllocator for RegAlloc {
                 }
             }
 
-            VReg::Virtual(_) => unreachable!(),
-            VReg::Spilled(_) => unreachable!(),
+            VReg::Virtual(_) => panic!(),
+            VReg::Spilled(_) => panic!(),
         }
     }
 
