@@ -841,11 +841,11 @@ impl ModuleBuilder {
                 let func = self.internal.functions.get_mut(func_id)?;
                 let block = func.blocks.get_mut(block_id)?;
                 let yielded = if yielded {
-                    Some(Value(func.value_index))
+                    func.value_index += 1;
+                    Some(Value(func.value_index - 1))
                 } else {
                     None
                 };
-                func.value_index += 1;
                 block.instructions.push(Instruction {
                     yielded,
                     type_: type_.clone(),
