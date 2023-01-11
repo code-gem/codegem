@@ -1,10 +1,11 @@
 [package]
 name = "codegem"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 description = "A small code generation library"
 license = "MPL-2.0"
 readme = "README.md"
+documentation = "https://docs.rs/codegem"
 repository = "https://github.com/code-gem/codegem/"
 keywords = ["codegen", "backend", "compiler", "code-generation"]
 categories = ["compilers"]
