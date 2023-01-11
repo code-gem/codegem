@@ -776,7 +776,7 @@ impl ModuleBuilder {
     /// ```
     pub fn push_block(&mut self) -> Option<BasicBlockId> {
         if let Some(func_id) = self.current_function {
-            let func = unsafe { self.internal.functions.get_unchecked_mut(func_id) };
+            let func = self.internal.functions.get_mut(func_id)?;
             let block_id = func.blocks.len();
             func.blocks.push(BasicBlock {
                 deleted: false,
@@ -838,8 +838,8 @@ impl ModuleBuilder {
 
                     _ => true,
                 };
-                let func = unsafe { self.internal.functions.get_unchecked_mut(func_id) };
-                let block = unsafe { func.blocks.get_unchecked_mut(block_id) };
+                let func = self.internal.functions.get_mut(func_id)?;
+                let block = func.blocks.get_mut(block_id)?;
                 let yielded = if yielded {
                     Some(Value(func.value_index))
                 } else {
@@ -871,10 +871,8 @@ impl ModuleBuilder {
     /// builder.set_terminator(Terminator::ReturnVoid);
     /// # }
     pub fn set_terminator(&mut self, terminator: Terminator) {
-        if let Some(func_id) = self.current_function {
-            if let Some(block_id) = self.current_block {
-                let func = unsafe { self.internal.functions.get_unchecked_mut(func_id) };
-                let block = unsafe { func.blocks.get_unchecked_mut(block_id) };
+        if let Some(func) = self.current_function.and_then(|v| self.internal.functions.get_mut(v)) {
+            if let Some(block) = self.current_block.and_then(|v| func.blocks.get_mut(v)) {
                 block.terminator = terminator;
             }
         }
@@ -895,7 +893,7 @@ impl ModuleBuilder {
     /// ```
     pub fn push_variable(&mut self, name: &str, type_: &Type) -> Option<VariableId> {
         if let Some(func_id) = self.current_function {
-            let func = unsafe { self.internal.functions.get_unchecked_mut(func_id) };
+            let func = self.internal.functions.get_mut(func_id)?;
             let id = func.variables.len();
             func.variables.push(Variable {
                 name: name.to_owned(),
