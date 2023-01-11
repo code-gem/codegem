@@ -3,7 +3,11 @@ use std::collections::HashMap;
 use self::arch::{Instr, VReg};
 
 pub mod arch;
+
+/// [`codegem::ir`] contains the intermediate representation (IR) that programs using this crate
+/// interface with, as well as a builder struct to create the intermediate representation.
 pub mod ir;
+
 pub mod regalloc;
 
 pub trait RegisterAllocator: Default {

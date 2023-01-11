@@ -1,7 +1,10 @@
+#![warn(missing_docs)]
+
 use std::{fmt::Display, collections::{HashSet, HashMap}};
 
 use super::arch::{Instr, InstructionSelector, VCode, VCodeGenerator};
 
+/// [`Module`] represents a module of SSA intermediate representation.
 #[derive(Default)]
 pub struct Module {
     name: String,
@@ -9,6 +12,18 @@ pub struct Module {
 }
 
 impl Module {
+    /// Lowers the module into [`VCode`]. The first generic argument can be ignored, whereas the
+    /// second generic argument is the instruction selector to use, which usually implies the first
+    /// generic argument.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use codegem::ir::*;
+    /// # use codegem::arch::rv64::*;
+    /// # fn test(module: Module) {
+    /// let vcode = module.lower_to_vcode::<_, RvSelector>();
+    /// # }
+    /// ```
     pub fn lower_to_vcode<I, S>(self) -> VCode<I>
     where
         S: InstructionSelector<Instruction = I>,
@@ -59,9 +74,13 @@ impl Display for Module {
     }
 }
 
+/// [`Type`] represents a type in the IR.
 #[derive(Clone)]
 pub enum Type {
+    /// A `void` type analogous to `void` in C or `()` in Rust.
     Void,
+
+    /// A signed or unsigned integer type with a given bitwidth.
     Integer(bool, u8),
 }
 
@@ -116,6 +135,7 @@ impl Display for Function {
     }
 }
 
+/// [`FunctionId`] represents a reference to a function in IR.
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct FunctionId(usize);
 
@@ -130,6 +150,7 @@ struct Variable {
     type_: Type,
 }
 
+/// [`VariableId`] represents a reference to a variable in an IR function.
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct VariableId(usize);
 
@@ -155,6 +176,8 @@ impl Display for BasicBlock {
     }
 }
 
+/// [`BasicBlockId`] represents a reference to a basic block in an IR function. See
+/// [`ModuleBuilder::push_block`] for details on what a basic block is.
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct BasicBlockId(FunctionId, usize);
 
@@ -180,7 +203,14 @@ impl Display for Instruction {
     }
 }
 
+/// [`ToIntegerOperation`] converts the given value into an integer operation.
 pub trait ToIntegerOperation {
+    /// Converts an integer into an integer operation.
+    /// # Example
+    /// ```rust
+    /// # use codegem::ir::*;
+    /// let op = 69i32.to_integer_operation();
+    /// ```
     fn to_integer_operation(self) -> Operation;
 }
 
@@ -244,34 +274,104 @@ impl ToIntegerOperation for u128 {
     }
 }
 
+/// [`Operation`] is an operation that can be performed by the IR.
 pub enum Operation {
+    /// Does nothing to the given value, returning a new value that has the same contents as the
+    /// passed in value. This is used internally.
     Identity(Value),
 
+    /// Creates an integer from the little endian bytes passed in and sign extending it if the
+    /// first parameter is true.
     Integer(bool, Vec<u8>),
 
+    /// Performs an addition on the two values.
     Add(Value, Value),
+
+    /// Performs a subtraction on the two values.
     Sub(Value, Value),
+
+    /// Performs a multiplication on the two values.
     Mul(Value, Value),
+
+    /// Performs a division on the two values.
     Div(Value, Value),
+
+    /// Performs a modulus on the two values.
     Mod(Value, Value),
+
+    /// Performs a left logical bit shift on the two values.
     Bsl(Value, Value),
+
+    /// Performs a right logical bit shift on the two values.
     Bsr(Value, Value),
+
+    /// Performs an equality check on the two values.
     Eq(Value, Value),
+
+    /// Performs an inverted equality check on the two values.
     Ne(Value, Value),
+
+    /// Performs a comparison check on the two values, returning true if less than and false
+    /// otherwise.
     Lt(Value, Value),
+
+    /// Performs a comparison check on the two values, returning true if less than or equal to
+    /// and false otherwise.
     Le(Value, Value),
+
+    /// Performs a comparison check on the two values, returning true if greater than and false
+    /// otherwise.
     Gt(Value, Value),
+
+    /// Performs a comparison check on the two values, returning true if less than or equal to
+    /// and false otherwise.
     Ge(Value, Value),
+
+    /// Performs a bitwise and on the two values.
     BitAnd(Value, Value),
+
+    /// Performs a bitwise or on the two values.
     BitOr(Value, Value),
+
+    /// Performs a bitwise xor on the two values.
     BitXor(Value, Value),
 
+    /// Performs a phi operation.
+    ///
+    /// The phi operation is a concept stolen from LLVM. It allows a basic block to choose which
+    /// value to yield depending on which basic block was the predecessor of the basic block the
+    /// phi node resides in.
+    ///
+    /// # Example generated code
+    /// ```ir
+    /// @0: function i32 @main() {
+    /// 0:
+    ///     %0 = i32 iconst 0000000000000001
+    ///     branch %0, $1, $2
+    /// 1: // predecessor to $3
+    ///     %1 = i32 iconst 0000000000000045
+    ///     jump $3
+    /// 2: // also a predecessor to $3
+    ///     %2 = i32 iconst 00000000000001a4
+    ///     jump $3
+    /// 3:
+    ///     %3 = i32 phi $1 => %1, $2 => %2 // %3 has to choose between %1 and %2 depending on
+    ///                                     // which basic block entered
+    ///     ret %3
+    /// }
+    /// ```
     Phi(Vec<(BasicBlockId, Value)>),
 
+    /// Gets a variable.
     GetVar(VariableId),
+
+    /// Sets a variable.
     SetVar(VariableId, Value),
 
+    /// Calls a function with the given arguments.
     Call(FunctionId, Vec<Value>),
+
+    /// Calls a function value with the given arguments.
     CallIndirect(Value, Vec<Value>),
 }
 
@@ -363,11 +463,25 @@ impl Display for Operation {
     }
 }
 
+/// [`Terminator`] terminates a given basic block. For information on basic blocks, see
+/// [`ModuleBuilder::push_block`].
 pub enum Terminator {
+    /// No terminator has been added to the block yet. Note that compiling blocks with this as its
+    /// terminator results in undefined behaviour.
     NoTerminator,
+
+    /// The block ends with a return with no value.
     ReturnVoid,
+
+    /// The block ends with a return with a value.
     Return(Value),
+
+    /// The block ends with a jump to another block.
     Jump(BasicBlockId),
+
+    /// The block ends with a branch to two different blocks depending on the truthiness of the
+    /// value. If the value is true, it jumps to the first block; otherwise, it jumps to the second
+    /// block.
     Branch(Value, BasicBlockId, BasicBlockId),
 }
 
@@ -383,6 +497,7 @@ impl Display for Terminator {
     }
 }
 
+/// [`Value`] represents a reference to a value in an IR function.
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Value(usize);
 
