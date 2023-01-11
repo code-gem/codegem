@@ -392,6 +392,27 @@ impl Display for Value {
     }
 }
 
+/// [`ModuleBuilder`] is used to build a module.
+///
+/// # Example
+/// ```rust
+/// # fn testy() -> Option<()> {
+/// # use codegem::ir::*;
+/// let mut builder = ModuleBuilder::default()
+///     .with_name("uwu");
+/// let main = builder.new_function("main", &[], &Type::Void);
+/// builder.switch_to_function(main);
+/// let entry = builder.push_block()?;
+/// builder.switch_to_block(entry);
+/// let val = builder.push_instruction(
+///     &Type::Integer(true, 32),
+///     Operation::Integer(true, 69u32.to_le_bytes().to_vec())
+/// )?;
+/// builder.set_terminator(Terminator::Return(val));
+/// let module = builder.build();
+/// # Some(())
+/// # }
+/// ```
 #[derive(Default)]
 pub struct ModuleBuilder {
     internal: Module,
@@ -400,13 +421,28 @@ pub struct ModuleBuilder {
 }
 
 impl ModuleBuilder {
+    /// Sets the name of the module being built.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use codegem::ir::*;
+    /// let builder = ModuleBuilder::default()
+    ///     .with_name("uwu");
+    /// ```
     pub fn with_name(mut self, name: &str) -> Self {
         self.internal.name = name.to_owned();
         self
     }
 
-    // Automatically does some dead code elimination, lowers variables to phi operations, and
-    // checks for malformed IR.
+    /// Consumes the builder and returns a module, performing some mandatory transformations such
+    /// as dead code elimination and Phi operation lowering, as well as checking for malformed IR.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use codegem::ir::*;
+    /// let empty_module = ModuleBuilder::default()
+    ///     .build();
+    /// ```
     // TODO: return Result<Module, MalformedIrError> on malformed IR instead of panicking.
     pub fn build(mut self) -> Module {
         for (f, func) in self.internal.functions.iter_mut().enumerate() {
@@ -557,6 +593,16 @@ impl ModuleBuilder {
         self.internal
     }
 
+    /// Adds a new function to the module being built. Returns a [`FunctionId`], which can be used
+    /// to reference the built function.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use codegem::ir::*;
+    /// # fn testy(builder: &mut ModuleBuilder) {
+    /// let main_func = builder.new_function("main", &[], &Type::Void);
+    /// # }
+    /// ```
     pub fn new_function(
         &mut self,
         name: &str,
@@ -581,11 +627,38 @@ impl ModuleBuilder {
         FunctionId(id)
     }
 
+    /// Switches the function to which the builder is currently adding blocks and instructions.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use codegem::ir::*;
+    /// # fn testy(builder: &mut ModuleBuilder) {
+    /// let main_func = builder.new_function("main", &[], &Type::Void);
+    /// builder.switch_to_function(main_func);
+    /// # }
+    /// ```
     pub fn switch_to_function(&mut self, id: FunctionId) {
         self.current_function = Some(id.0);
         self.current_block = None;
     }
 
+    /// Adds a new basic block to the current function. Returns a [`BasicBlockId`], which can be used
+    /// to reference the built basic block. Returns None if there is no function currently
+    /// selected.
+    ///
+    /// A basic block is a single strand of code that does not have any control flow within it.
+    /// Function calls do not count as control flow in this case. Each basic block contains
+    /// instructions and ends with a single terminator, which may jump to one or more basic blocks,
+    /// or exit from the current function or program.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use codegem::ir::*;
+    /// # fn testy(builder: &mut ModuleBuilder) -> Option<()> {
+    /// let entry_block = builder.push_block()?;
+    /// # None
+    /// # }
+    /// ```
     pub fn push_block(&mut self) -> Option<BasicBlockId> {
         if let Some(func_id) = self.current_function {
             let func = unsafe { self.internal.functions.get_unchecked_mut(func_id) };
@@ -602,6 +675,17 @@ impl ModuleBuilder {
         }
     }
 
+    /// Switches the basic block to which the builder is currently adding blocks and instructions.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use codegem::ir::*;
+    /// # fn testy(builder: &mut ModuleBuilder) -> Option<()> {
+    /// let entry_block = builder.push_block()?;
+    /// builder.switch_to_block(entry_block);
+    /// # None
+    /// # }
+    /// ```
     pub fn switch_to_block(&mut self, id: BasicBlockId) {
         match self.current_function {
             Some(x) if id.0 .0 == x => self.current_block = Some(id.1),
@@ -609,6 +693,21 @@ impl ModuleBuilder {
         }
     }
 
+    /// Pushes an instruction to the current block in the current function. Returns an optional
+    /// [`Value`] depending on if there is a selected function and block, and if the instruction
+    /// does yield a value. (Some [`Operation`]s, such as [`Operation::SetVar`], do not return
+    /// anything.)
+    ///
+    /// # Example
+    /// ```rust
+    /// # use codegem::ir::*;
+    /// # fn testy(builder: &mut ModuleBuilder) -> Option<()> {
+    /// builder.push_instruction(
+    ///     &Type::Integer(true, 32),
+    ///     Operation::Integer(true, 69i32.to_le_bytes().to_vec())
+    /// );
+    /// # None
+    /// # }
     pub fn push_instruction(&mut self, type_: &Type, instr: Operation) -> Option<Value> {
         if let Some(func_id) = self.current_function {
             if let Some(block_id) = self.current_block {
@@ -648,6 +747,37 @@ impl ModuleBuilder {
         None
     }
 
+    /// Sets the [`Terminator`] of the current basic block.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use codegem::ir::*;
+    /// # fn testy(builder: &mut ModuleBuilder) {
+    /// builder.set_terminator(Terminator::ReturnVoid);
+    /// # }
+    pub fn set_terminator(&mut self, terminator: Terminator) {
+        if let Some(func_id) = self.current_function {
+            if let Some(block_id) = self.current_block {
+                let func = unsafe { self.internal.functions.get_unchecked_mut(func_id) };
+                let block = unsafe { func.blocks.get_unchecked_mut(block_id) };
+                block.terminator = terminator;
+            }
+        }
+    }
+
+    /// Pushes a variable of the given name and type to the current function. This variable can be
+    /// used anywhere in the function it is defined in. Currently, creating an [`Operation::GetVar`]
+    /// instruction before an [`Operation::SetVar`] instruction is undefined behaviour. Returns a
+    /// [`VariableId`] if there is a currently selected function, which can be used to reference
+    /// the variable.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use codegem::ir::*;
+    /// # fn testy(builder: &mut ModuleBuilder) {
+    /// let i = builder.push_variable("i", &Type::Integer(true, 32));
+    /// # }
+    /// ```
     pub fn push_variable(&mut self, name: &str, type_: &Type) -> Option<VariableId> {
         if let Some(func_id) = self.current_function {
             let func = unsafe { self.internal.functions.get_unchecked_mut(func_id) };
@@ -662,20 +792,30 @@ impl ModuleBuilder {
         }
     }
 
-    pub fn set_terminator(&mut self, terminator: Terminator) {
-        if let Some(func_id) = self.current_function {
-            if let Some(block_id) = self.current_block {
-                let func = unsafe { self.internal.functions.get_unchecked_mut(func_id) };
-                let block = unsafe { func.blocks.get_unchecked_mut(block_id) };
-                block.terminator = terminator;
-            }
-        }
-    }
-
+    /// Gets the currently selected function.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use codegem::ir::*;
+    /// # fn testy(builder: &mut ModuleBuilder) {
+    /// let current = builder.get_function();
+    /// # }
+    /// ```
     pub fn get_function(&self) -> Option<FunctionId> {
         self.current_function.map(FunctionId)
     }
 
+    /// Gets the arguments of the given function as variables
+    ///
+    /// # Example
+    /// ```rust
+    /// # use codegem::ir::*;
+    /// # fn testy(builder: &mut ModuleBuilder) -> Option<()> {
+    /// let current = builder.get_function()?;
+    /// let args = builder.get_function_args(current)?;
+    /// # None
+    /// # }
+    /// ```
     pub fn get_function_args(&self, func: FunctionId) -> Option<Vec<VariableId>> {
         self.internal
             .functions
@@ -683,6 +823,16 @@ impl ModuleBuilder {
             .map(|f| (0..f.arg_types.len()).into_iter().map(VariableId).collect())
     }
 
+    /// Gets the currently selected basic block.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use codegem::ir::*;
+    /// # fn testy(builder: &mut ModuleBuilder) -> Option<()> {
+    /// let current = builder.get_block()?;
+    /// # None
+    /// # }
+    /// ```
     pub fn get_block(&self) -> Option<BasicBlockId> {
         if let Some(f) = self.get_function() {
             self.current_block.map(|b| BasicBlockId(f, b))
