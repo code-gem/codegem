@@ -467,7 +467,7 @@ impl Instr for X64Instruction {
                 let _ = writeln!(file, ".intel_syntax\n.global main");
 
                 for func in vcode.functions.iter() {
-                    let _ = writeln!(file, "{}:\n    push %rbp\n    mov %rbp, %rsp", func.name);
+                    let _ = writeln!(file, "{}:", func.name);
                     for (i, labelled) in func.labels.iter().enumerate() {
                         let _ = writeln!(file, ".{}.L{}:", func.name, i);
                         for instruction in labelled.instructions.iter() {
@@ -529,7 +529,7 @@ impl Instr for X64Instruction {
                                 }
 
                                 X64Instruction::Ret => {
-                                    let _ = writeln!(file, "    mov %rsp, %rbp\n    pop %rbp\n    ret");
+                                    let _ = writeln!(file, "    ret");
                                 }
 
                                 X64Instruction::Push { source } => {
@@ -599,6 +599,16 @@ pub struct X64Selector;
 
 impl InstructionSelector for X64Selector {
     type Instruction = X64Instruction;
+
+    fn select_pre_function_instructions(&mut self, gen: &mut VCodeGenerator<Self::Instruction, Self>) {
+        gen.push_instruction(X64Instruction::Push {
+            source: VReg::RealRegister(X64_REGISTER_RBP),
+        });
+        gen.push_instruction(X64Instruction::Mov {
+            dest: VReg::RealRegister(X64_REGISTER_RBP),
+            source: VReg::RealRegister(X64_REGISTER_RSP),
+        });
+    }
 
     fn select_instr(
         &mut self,
@@ -804,6 +814,13 @@ impl InstructionSelector for X64Selector {
             Terminator::NoTerminator => (),
 
             Terminator::ReturnVoid => {
+                gen.push_instruction(X64Instruction::Mov {
+                    dest: VReg::RealRegister(X64_REGISTER_RSP),
+                    source: VReg::RealRegister(X64_REGISTER_RBP),
+                });
+                gen.push_instruction(X64Instruction::Pop {
+                    dest: VReg::RealRegister(X64_REGISTER_RBP),
+                });
                 gen.push_instruction(X64Instruction::Ret);
             }
 
@@ -814,6 +831,13 @@ impl InstructionSelector for X64Selector {
                     source,
                 });
 
+                gen.push_instruction(X64Instruction::Mov {
+                    dest: VReg::RealRegister(X64_REGISTER_RSP),
+                    source: VReg::RealRegister(X64_REGISTER_RBP),
+                });
+                gen.push_instruction(X64Instruction::Pop {
+                    dest: VReg::RealRegister(X64_REGISTER_RBP),
+                });
                 gen.push_instruction(X64Instruction::Ret);
             }
 

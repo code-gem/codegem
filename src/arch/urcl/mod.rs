@@ -671,6 +671,8 @@ pub struct UrclSelector {
 impl InstructionSelector for UrclSelector {
     type Instruction = UrclInstruction;
 
+    fn select_pre_function_instructions(&mut self, _gen: &mut VCodeGenerator<Self::Instruction, Self>) {}
+
     fn select_instr(
         &mut self,
         gen: &mut VCodeGenerator<Self::Instruction, Self>,

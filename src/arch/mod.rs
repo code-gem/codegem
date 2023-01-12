@@ -163,6 +163,9 @@ pub trait InstructionSelector: Default {
     /// [`InstructionSelector::Instruction`] is the type to use for instructions.
     type Instruction: Instr;
 
+    /// Selects the instructions that occur before the function starts executing.
+    fn select_pre_function_instructions(&mut self, gen: &mut VCodeGenerator<Self::Instruction, Self>);
+
     /// Selects an instruction to use for the given [`Operation`].
     fn select_instr(
         &mut self,

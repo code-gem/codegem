@@ -52,6 +52,10 @@ impl Module {
                 }
 
                 gen.switch_to_label(BasicBlockId(FunctionId(f), i));
+                if i == 0 {
+                    selector.select_pre_function_instructions(&mut gen);
+                }
+
                 for instr in block.instructions {
                     selector.select_instr(&mut gen, instr.yielded, instr.type_, instr.operation);
                 }

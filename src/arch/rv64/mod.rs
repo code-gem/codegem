@@ -395,7 +395,7 @@ impl Instr for RvInstruction {
             Ok(mut file) => {
                 let _ = writeln!(file, ".global main");
                 for func in vcode.functions.iter() {
-                    let _ = writeln!(file, "{}:\n    sd s0, (sp)\n    add s0, sp, zero", func.name);
+                    let _ = writeln!(file, "{}:", func.name);
                     for (i, labelled) in func.labels.iter().enumerate() {
                         let _ = writeln!(file, ".{}.L{}:", func.name, i);
                         for instruction in labelled.instructions.iter() {
@@ -441,7 +441,7 @@ impl Instr for RvInstruction {
                                 }
 
                                 RvInstruction::Ret => {
-                                    let _ = write!(file, "    add sp, s0, zero\n    ret");
+                                    let _ = write!(file, "    ret");
                                 }
 
                                 RvInstruction::Load { rd, imm, rx } => {
@@ -516,6 +516,31 @@ pub struct RvSelector;
 
 impl InstructionSelector for RvSelector {
     type Instruction = RvInstruction;
+
+    fn select_pre_function_instructions(&mut self, gen: &mut VCodeGenerator<Self::Instruction, Self>) {
+        gen.push_instruction(RvInstruction::AluOpImm {
+            op: RvAluOp::Add,
+            rd: VReg::RealRegister(RV_REGISTER_SP),
+            rx: VReg::RealRegister(RV_REGISTER_SP),
+            imm: -16,
+        });
+        gen.push_instruction(RvInstruction::Store {
+            rx: VReg::RealRegister(RV_REGISTER_FP),
+            imm: 8,
+            ry: VReg::RealRegister(RV_REGISTER_SP),
+        });
+        gen.push_instruction(RvInstruction::Store {
+            rx: VReg::RealRegister(RV_REGISTER_RA),
+            imm: 0,
+            ry: VReg::RealRegister(RV_REGISTER_SP),
+        });
+        gen.push_instruction(RvInstruction::AluOpImm {
+            op: RvAluOp::Add,
+            rd: VReg::RealRegister(RV_REGISTER_FP),
+            rx: VReg::RealRegister(RV_REGISTER_SP),
+            imm: 0,
+        });
+    }
 
     fn select_instr(
         &mut self,
@@ -744,16 +769,49 @@ impl InstructionSelector for RvSelector {
             Terminator::NoTerminator => (),
 
             Terminator::ReturnVoid => {
+                gen.push_instruction(RvInstruction::AluOpImm {
+                    op: RvAluOp::Add,
+                    rd: VReg::RealRegister(RV_REGISTER_SP),
+                    rx: VReg::RealRegister(RV_REGISTER_FP),
+                    imm: 0,
+                });
+                gen.push_instruction(RvInstruction::Load {
+                    rd: VReg::RealRegister(RV_REGISTER_RA),
+                    imm: 0,
+                    rx: VReg::RealRegister(RV_REGISTER_FP),
+                });
+                gen.push_instruction(RvInstruction::Load {
+                    rd: VReg::RealRegister(RV_REGISTER_FP),
+                    imm: 8,
+                    rx: VReg::RealRegister(RV_REGISTER_FP),
+                });
                 gen.push_instruction(RvInstruction::Ret);
             }
 
             Terminator::Return(v) => {
                 let rx = gen.get_vreg(v);
-                gen.push_instruction(RvInstruction::AluOp {
+                gen.push_instruction(RvInstruction::AluOpImm {
                     op: RvAluOp::Add,
                     rd: VReg::RealRegister(RV_REGISTER_A0),
                     rx,
-                    ry: VReg::RealRegister(RV_REGISTER_ZERO),
+                    imm: 0,
+                });
+
+                gen.push_instruction(RvInstruction::AluOpImm {
+                    op: RvAluOp::Add,
+                    rd: VReg::RealRegister(RV_REGISTER_SP),
+                    rx: VReg::RealRegister(RV_REGISTER_FP),
+                    imm: 0,
+                });
+                gen.push_instruction(RvInstruction::Load {
+                    rd: VReg::RealRegister(RV_REGISTER_RA),
+                    imm: 0,
+                    rx: VReg::RealRegister(RV_REGISTER_FP),
+                });
+                gen.push_instruction(RvInstruction::Load {
+                    rd: VReg::RealRegister(RV_REGISTER_FP),
+                    imm: 8,
+                    rx: VReg::RealRegister(RV_REGISTER_FP),
                 });
 
                 gen.push_instruction(RvInstruction::Ret);
