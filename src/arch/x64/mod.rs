@@ -461,107 +461,102 @@ impl Instr for X64Instruction {
         }
     }
 
-    fn emit_assembly(vcode: &VCode<Self>) {
-        match File::create(format!("{}.s", vcode.name)) {
-            Ok(mut file) => {
-                let _ = writeln!(file, ".intel_syntax\n.global main");
+    fn emit_assembly(vcode: &VCode<Self>) -> std::io::Result<()> {
+        let mut file = File::create(format!("{}.s", vcode.name))?;
+        
+        writeln!(file, ".intel_syntax\n.global main")?;
 
-                for func in vcode.functions.iter() {
-                    let _ = writeln!(file, "{}:\n    push %rbp\n    mov %rbp, %rsp", func.name);
-                    for (i, labelled) in func.labels.iter().enumerate() {
-                        let _ = writeln!(file, ".{}.L{}:", func.name, i);
-                        for instruction in labelled.instructions.iter() {
-                            match instruction {
-                                X64Instruction::PhiPlaceholder { .. } => (),
+        for func in vcode.functions.iter() {
+            writeln!(file, "{}:\n    push %rbp\n    mov %rbp, %rsp", func.name)?;
+            for (i, labelled) in func.labels.iter().enumerate() {
+                writeln!(file, ".{}.L{}:", func.name, i)?;
+                for instruction in labelled.instructions.iter() {
+                    match instruction {
+                        X64Instruction::PhiPlaceholder { .. } => (),
 
-                                X64Instruction::Integer { dest, value } => {
-                                    let _ = writeln!(file, "    mov {}, {}", register(*dest), value);
+                        X64Instruction::Integer { dest, value } => {
+                            writeln!(file, "    mov {}, {}", register(*dest), value)?;
+                        }
+
+                        X64Instruction::AluOp { op, dest, source } => {
+                            writeln!(file, "    {} {}, {}", op, register(*dest), register(*source))?;
+                        }
+
+                        X64Instruction::DivRem { source, .. } => {
+                            writeln!(file, "    div {}", register(*source))?;
+                        }
+
+                        X64Instruction::BitShift { left, dest, .. } => {
+                            writeln!(file, "    {} {}, %cl", if *left { "shl" } else { "shr" }, register(*dest))?;
+                        }
+
+                        X64Instruction::Mov { dest, source } => {
+                            writeln!(file, "    mov {}, {}", register(*dest), register(*source))?;
+                        }
+
+                        X64Instruction::CMov { op, dest, source } => {
+                            writeln!(file, "    cmov{} {}, {}", op, register(*dest), register(*source))?;
+                        }
+
+                        X64Instruction::Cmp { a, b } => {
+                            writeln!(file, "    cmp {}, {}", register(*a), register(*b))?;
+                        }
+
+                        X64Instruction::CmpZero { source } => {
+                            writeln!(file, "    cmp {}, 0", register(*source))?;
+                        }
+
+                        X64Instruction::Jmp { location } => {
+                            match *location {
+                                Location::InternalLabel(_) => {
+                                    writeln!(file, "    jmp {}", location)?;
                                 }
-
-                                X64Instruction::AluOp { op, dest, source } => {
-                                    let _ = writeln!(file, "    {} {}, {}", op, register(*dest), register(*source));
-                                }
-
-                                X64Instruction::DivRem { source, .. } => {
-                                    let _ = writeln!(file, "    div {}", register(*source));
-                                }
-
-                                X64Instruction::BitShift { left, dest, .. } => {
-                                    let _ = writeln!(file, "    {} {}, %cl", if *left { "shl" } else { "shr" }, register(*dest));
-                                }
-
-                                X64Instruction::Mov { dest, source } => {
-                                    let _ = writeln!(file, "    mov {}, {}", register(*dest), register(*source));
-                                }
-
-                                X64Instruction::CMov { op, dest, source } => {
-                                    let _ = writeln!(file, "    cmov{} {}, {}", op, register(*dest), register(*source));
-                                }
-
-                                X64Instruction::Cmp { a, b } => {
-                                    let _ = writeln!(file, "    cmp {}, {}", register(*a), register(*b));
-                                }
-
-                                X64Instruction::CmpZero { source } => {
-                                    let _ = writeln!(file, "    cmp {}, 0", register(*source));
-                                }
-
-                                X64Instruction::Jmp { location } => {
-                                    match *location {
-                                        Location::InternalLabel(_) => {
-                                            let _ = writeln!(file, "    jmp {}", location);
-                                        }
-                                        Location::Function(f) => {
-                                            let _ = writeln!(file, "    jmp {}", vcode.functions[f].name);
-                                        }
-                                    }
-                                }
-
-                                X64Instruction::Jne { location } => {
-                                    match *location {
-                                        Location::InternalLabel(_) => {
-                                            let _ = writeln!(file, "    jne {}", location);
-                                        }
-                                        Location::Function(f) => {
-                                            let _ = writeln!(file, "    jne {}", vcode.functions[f].name);
-                                        }
-                                    }
-                                }
-
-                                X64Instruction::Ret => {
-                                    let _ = writeln!(file, "    mov %rsp, %rbp\n    pop %rbp\n    ret");
-                                }
-
-                                X64Instruction::Push { source } => {
-                                    let _ = writeln!(file, "    push {}", register(*source));
-                                }
-
-                                X64Instruction::Pop { dest } => {
-                                    let _ = writeln!(file, "    pop {}", register(*dest));
-                                }
-
-                                X64Instruction::Call { location, .. } => {
-                                    match *location {
-                                        Location::InternalLabel(_) => {
-                                            let _ = writeln!(file, "    call {}", location);
-                                        }
-                                        Location::Function(f) => {
-                                            let _ = writeln!(file, "    call {}", vcode.functions[f].name);
-                                        }
-                                    }
+                                Location::Function(f) => {
+                                    writeln!(file, "    jmp {}", vcode.functions[f].name)?;
                                 }
                             }
                         }
 
-                        let _ = writeln!(file);
+                        X64Instruction::Jne { location } => {
+                            match *location {
+                                Location::InternalLabel(_) => {
+                                    writeln!(file, "    jne {}", location)?;
+                                }
+                                Location::Function(f) => {
+                                    writeln!(file, "    jne {}", vcode.functions[f].name)?;
+                                }
+                            }
+                        }
+
+                        X64Instruction::Ret => {
+                            writeln!(file, "    mov %rsp, %rbp\n    pop %rbp\n    ret")?;
+                        }
+
+                        X64Instruction::Push { source } => {
+                            writeln!(file, "    push {}", register(*source))?;
+                        }
+
+                        X64Instruction::Pop { dest } => {
+                            writeln!(file, "    pop {}", register(*dest))?;
+                        }
+
+                        X64Instruction::Call { location, .. } => {
+                            match *location {
+                                Location::InternalLabel(_) => {
+                                    writeln!(file, "    call {}", location)?;
+                                }
+                                Location::Function(f) => {
+                                    writeln!(file, "    call {}", vcode.functions[f].name)?;
+                                }
+                            }
+                        }
                     }
                 }
-            }
 
-            Err(e) => {
-                eprintln!("Could not open file `{}`: {}", vcode.name, e);
+                writeln!(file)?
             }
         }
+        Ok(())
     }
 }
 

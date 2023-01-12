@@ -390,78 +390,74 @@ impl Instr for RvInstruction {
         }
     }
 
-    fn emit_assembly(vcode: &VCode<Self>) {
-        match File::create(format!("{}.s", vcode.name)) {
-            Ok(mut file) => {
-                let _ = writeln!(file, ".global main");
-                for func in vcode.functions.iter() {
-                    let _ = writeln!(file, "{}:\n    sd s0, (sp)\n    add s0, sp, zero", func.name);
-                    for (i, labelled) in func.labels.iter().enumerate() {
-                        let _ = writeln!(file, ".{}.L{}:", func.name, i);
-                        for instruction in labelled.instructions.iter() {
-                            match instruction {
-                                RvInstruction::PhiPlaceholder { .. } => (),
+    fn emit_assembly(vcode: &VCode<Self>) -> std::io::Result<()> {
+        let mut file = File::create(format!("{}.s", vcode.name))?;
 
-                                RvInstruction::Integer { rd, value } => {
-                                    let _ = writeln!(file, "    li {}, {}", register(*rd), value);
+        writeln!(file, ".global main")?;
+        for func in vcode.functions.iter() {
+            writeln!(file, "{}:\n    sd s0, (sp)\n    add s0, sp, zero", func.name)?;
+            for (i, labelled) in func.labels.iter().enumerate() {
+                writeln!(file, ".{}.L{}:", func.name, i)?;
+                for instruction in labelled.instructions.iter() {
+                    match instruction {
+                        RvInstruction::PhiPlaceholder { .. } => (),
+
+                        RvInstruction::Integer { rd, value } => {
+                            writeln!(file, "    li {}, {}", register(*rd), value)?;
+                        }
+
+                        RvInstruction::AluOp { op, rd, rx, ry } => {
+                            writeln!(file, "    {} {}, {}, {}", op, register(*rd), register(*rx), register(*ry))?;
+                        }
+
+                        RvInstruction::AluOpImm { op: RvAluOp::Sub, rd, rx, imm } => {
+                            writeln!(file, "    addi {}, {}, {}", register(*rd), register(*rx), -imm)?;
+                        }
+
+                        RvInstruction::AluOpImm { op, rd, rx, imm } => {
+                            writeln!(file, "    {} {}, {}, {}", op, register(*rd), register(*rx), imm)?;
+                        }
+
+                        RvInstruction::Jal { rd, location, .. } => {
+                            match *location {
+                                Location::InternalLabel(_) => {
+                                    writeln!(file, "    jal {}, {}", register(*rd), location)?;
                                 }
-
-                                RvInstruction::AluOp { op, rd, rx, ry } => {
-                                    let _ = writeln!(file, "    {} {}, {}, {}", op, register(*rd), register(*rx), register(*ry));
-                                }
-
-                                RvInstruction::AluOpImm { op: RvAluOp::Sub, rd, rx, imm } => {
-                                    let _ = writeln!(file, "    addi {}, {}, {}", register(*rd), register(*rx), -imm);
-                                }
-
-                                RvInstruction::AluOpImm { op, rd, rx, imm } => {
-                                    let _ = writeln!(file, "    {} {}, {}, {}", op, register(*rd), register(*rx), imm);
-                                }
-
-                                RvInstruction::Jal { rd, location, .. } => {
-                                    match *location {
-                                        Location::InternalLabel(_) => {
-                                            let _ = writeln!(file, "    jal {}, {}", register(*rd), location);
-                                        }
-                                        Location::Function(f) => {
-                                            let _ = writeln!(file, "    jal {}, {}", register(*rd), vcode.functions[f].name);
-                                        }
-                                    }
-                                }
-
-                                RvInstruction::Bne { rx, ry, location } => {
-                                    match *location {
-                                        Location::InternalLabel(_) => {
-                                            let _ = writeln!(file, "    bne {}, {}, {}", register(*rx), register(*ry), location);
-                                        }
-                                        Location::Function(f) => {
-                                            let _ = writeln!(file, "    bne {}, {}, {}", register(*rx), register(*ry), vcode.functions[f].name);
-                                        }
-                                    }
-                                }
-
-                                RvInstruction::Ret => {
-                                    let _ = write!(file, "    add sp, s0, zero\n    ret");
-                                }
-
-                                RvInstruction::Load { rd, imm, rx } => {
-                                    let _ = writeln!(file, "    ld {}, {}({})", register(*rd), imm, register(*rx));
-                                }
-
-                                RvInstruction::Store { rx, imm, ry } => {
-                                    let _ = writeln!(file, "    sd {}, {}({})", register(*rx), imm, register(*ry));
+                                Location::Function(f) => {
+                                    writeln!(file, "    jal {}, {}", register(*rd), vcode.functions[f].name)?;
                                 }
                             }
                         }
-                    }
 
-                    let _ = writeln!(file);
+                        RvInstruction::Bne { rx, ry, location } => {
+                            match *location {
+                                Location::InternalLabel(_) => {
+                                    writeln!(file, "    bne {}, {}, {}", register(*rx), register(*ry), location)?;
+                                }
+                                Location::Function(f) => {
+                                    writeln!(file, "    bne {}, {}, {}", register(*rx), register(*ry), vcode.functions[f].name)?;
+                                }
+                            }
+                        }
+
+                        RvInstruction::Ret => {
+                            write!(file, "    add sp, s0, zero\n    ret")?;
+                        }
+
+                        RvInstruction::Load { rd, imm, rx } => {
+                            writeln!(file, "    ld {}, {}({})", register(*rd), imm, register(*rx))?;
+                        }
+
+                        RvInstruction::Store { rx, imm, ry } => {
+                            writeln!(file, "    sd {}, {}({})", register(*rx), imm, register(*ry))?;
+                        }
+                    }
                 }
             }
-            Err(e) => {
-                eprintln!("Could not open file `{}`: {}", vcode.name, e);
-            }
+
+            writeln!(file)?;
         }
+        Ok(())
     }
 }
 
