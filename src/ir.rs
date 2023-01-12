@@ -1,6 +1,9 @@
 #![warn(missing_docs)]
 
-use std::{fmt::Display, collections::{HashSet, HashMap}};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 
 use super::arch::{Instr, InstructionSelector, VCode, VCodeGenerator};
 
@@ -75,7 +78,7 @@ impl Display for Module {
 }
 
 /// [`Type`] represents a type in the IR.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Type {
     /// A `void` type analogous to `void` in C or `()` in Rust.
     Void,
@@ -615,7 +618,9 @@ impl ModuleBuilder {
                 }
 
                 if let Terminator::Branch(_, a, b) = block.terminator {
-                    if func.blocks[a.1].predecessors.len() > 1 || func.blocks[b.1].predecessors.len() > 1 {
+                    if func.blocks[a.1].predecessors.len() > 1
+                        || func.blocks[b.1].predecessors.len() > 1
+                    {
                         panic!("malformed ir");
                     }
                 }
@@ -662,17 +667,15 @@ impl ModuleBuilder {
                 let mut to_remove = Vec::new();
                 for (j, instruction) in block.instructions.iter_mut().enumerate() {
                     match instruction.operation {
-                        Operation::GetVar(var) => {
-                            match var_map.get(&(var, i)) {
-                                Some(&val) => {
-                                    instruction.operation = Operation::Identity(val);
-                                }
-
-                                None => {
-                                    panic!("malformed ir");
-                                }
+                        Operation::GetVar(var) => match var_map.get(&(var, i)) {
+                            Some(&val) => {
+                                instruction.operation = Operation::Identity(val);
                             }
-                        }
+
+                            None => {
+                                panic!("malformed ir");
+                            }
+                        },
 
                         Operation::SetVar(var, val) => {
                             var_map.insert((var, i), val);
@@ -696,8 +699,16 @@ impl ModuleBuilder {
                 if block.predecessors.len() > 1 {
                     for instruction in block.instructions.iter_mut() {
                         if let Operation::Phi(mapping) = &mut instruction.operation {
-                            if let Some(&var) = instruction.yielded.as_ref().and_then(|v| phi_to_var_map.get(v)) {
-                                *mapping = block.predecessors.iter().filter_map(|&v| var_map.get(&(var, v.1)).map(|&u| (v, u))).collect();
+                            if let Some(&var) = instruction
+                                .yielded
+                                .as_ref()
+                                .and_then(|v| phi_to_var_map.get(v))
+                            {
+                                *mapping = block
+                                    .predecessors
+                                    .iter()
+                                    .filter_map(|&v| var_map.get(&(var, v.1)).map(|&u| (v, u)))
+                                    .collect();
                             }
                         }
                     }
@@ -871,7 +882,10 @@ impl ModuleBuilder {
     /// builder.set_terminator(Terminator::ReturnVoid);
     /// # }
     pub fn set_terminator(&mut self, terminator: Terminator) {
-        if let Some(func) = self.current_function.and_then(|v| self.internal.functions.get_mut(v)) {
+        if let Some(func) = self
+            .current_function
+            .and_then(|v| self.internal.functions.get_mut(v))
+        {
             if let Some(block) = self.current_block.and_then(|v| func.blocks.get_mut(v)) {
                 block.terminator = terminator;
             }
