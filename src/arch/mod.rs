@@ -175,6 +175,7 @@ pub trait InstructionSelector: Default {
     /// Selects an instruction to use for a given [`Terminator`].
     fn select_term(&mut self, gen: &mut VCodeGenerator<Self::Instruction, Self>, op: Terminator);
 
+    /// Performs post generation transforms on the [`Function`].
     fn post_function_generation(&mut self, func: &mut Function<Self::Instruction>, gen: &mut VCodeGenerator<Self::Instruction, Self>);
 
     /// Performs post generation transforms on the [`VCode`].

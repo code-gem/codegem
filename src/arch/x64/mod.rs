@@ -469,7 +469,7 @@ impl Instr for X64Instruction {
                 for func in vcode.functions.iter() {
                     let _ = writeln!(file, "{}:\n    push %rbp\n    mov %rbp, %rsp", func.name);
                     for (i, labelled) in func.labels.iter().enumerate() {
-                        let _ = writeln!(file, ".L{}:", i);
+                        let _ = writeln!(file, ".{}.L{}:", func.name, i);
                         for instruction in labelled.instructions.iter() {
                             match instruction {
                                 X64Instruction::PhiPlaceholder { .. } => (),
@@ -869,6 +869,6 @@ impl InstructionSelector for X64Selector {
         }
     }
 
-    fn post_generation(&mut self, vcode: &mut VCode<Self::Instruction>) {
+    fn post_generation(&mut self, _vcode: &mut VCode<Self::Instruction>) {
     }
 }
