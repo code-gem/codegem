@@ -100,6 +100,7 @@ pub enum RvInstruction {
     Jal {
         rd: VReg,
         location: Location,
+        clobbers: Vec<VReg>,
     },
 
     Bne {
@@ -133,7 +134,7 @@ impl Display for RvInstruction {
             RvInstruction::AluOp { op, rd, rx, ry } => write!(f, "{} {}, {}, {}", op, rd, rx, ry),
             RvInstruction::AluOpImm { op, rd, rx, imm } => write!(f, "{} {}, {}, {}", op, rd, rx, imm),
 
-            RvInstruction::Jal { rd, location } => write!(f, "jal {}, {}", rd, location),
+            RvInstruction::Jal { rd, location, .. } => write!(f, "jal {}, {}", rd, location),
 
             RvInstruction::Bne { rx, ry, location } => {
                 write!(f, "bne {}, {}, {}", rx, ry, location)
@@ -180,7 +181,16 @@ impl Instr for RvInstruction {
     }
 
     fn get_arg_regs() -> Vec<VReg> {
-        vec![]
+        vec![
+            VReg::RealRegister(RV_REGISTER_A0),
+            VReg::RealRegister(RV_REGISTER_A1),
+            VReg::RealRegister(RV_REGISTER_A2),
+            VReg::RealRegister(RV_REGISTER_A3),
+            VReg::RealRegister(RV_REGISTER_A4),
+            VReg::RealRegister(RV_REGISTER_A5),
+            VReg::RealRegister(RV_REGISTER_A6),
+            VReg::RealRegister(RV_REGISTER_A7),
+        ]
     }
 
     fn collect_registers<A>(&self, alloc: &mut A)
@@ -205,8 +215,11 @@ impl Instr for RvInstruction {
                 alloc.add_use(*rx);
             }
 
-            RvInstruction::Jal { rd, .. } => {
-                alloc.add_def(*rd);
+            RvInstruction::Jal { clobbers, .. } => {
+                for (clobber, arg) in clobbers.iter().zip(RvInstruction::get_arg_regs().into_iter()) {
+                    alloc.add_use(*clobber);
+                    alloc.force_same(*clobber, arg);
+                }
             }
 
             RvInstruction::Bne { rx, ry, .. } => {
@@ -384,7 +397,7 @@ impl Instr for RvInstruction {
                 for func in vcode.functions.iter() {
                     let _ = writeln!(file, "{}:\n    sd s0, (sp)\n    add s0, sp, zero", func.name);
                     for (i, labelled) in func.labels.iter().enumerate() {
-                        let _ = writeln!(file, ".L{}:", i);
+                        let _ = writeln!(file, ".{}.L{}:", func.name, i);
                         for instruction in labelled.instructions.iter() {
                             match instruction {
                                 RvInstruction::PhiPlaceholder { .. } => (),
@@ -405,7 +418,7 @@ impl Instr for RvInstruction {
                                     let _ = writeln!(file, "    {} {}, {}, {}", op, register(*rd), register(*rx), imm);
                                 }
 
-                                RvInstruction::Jal { rd, location } => {
+                                RvInstruction::Jal { rd, location, .. } => {
                                     match *location {
                                         Location::InternalLabel(_) => {
                                             let _ = writeln!(file, "    jal {}, {}", register(*rd), location);
@@ -499,10 +512,7 @@ fn register(reg: VReg) -> String {
 }
 
 #[derive(Default)]
-pub struct RvSelector {
-    value_map: HashMap<Value, VReg>,
-    vreg_index: usize,
-}
+pub struct RvSelector;
 
 impl InstructionSelector for RvSelector {
     type Instruction = RvInstruction;
@@ -516,10 +526,7 @@ impl InstructionSelector for RvSelector {
     ) {
         let rd = match result {
             Some(val) => {
-                let dest = VReg::Virtual(self.vreg_index);
-                self.vreg_index += 1;
-                self.value_map.insert(val, dest);
-                dest
+                gen.get_vreg(val)
             }
 
             None => VReg::RealRegister(RV_REGISTER_ZERO),
@@ -527,9 +534,8 @@ impl InstructionSelector for RvSelector {
 
         match op {
             Operation::Identity(value) => {
-                if let Some(&rx) = self.value_map.get(&value) {
-                    gen.push_instruction(RvInstruction::AluOp { op: RvAluOp::Add, rd, rx, ry: VReg::RealRegister(RV_REGISTER_ZERO) });
-                }
+                let rx = gen.get_vreg(value);
+                gen.push_instruction(RvInstruction::AluOp { op: RvAluOp::Add, rd, rx, ry: VReg::RealRegister(RV_REGISTER_ZERO) });
             }
 
             Operation::Integer(_signed, mut value) => {
@@ -552,150 +558,132 @@ impl InstructionSelector for RvSelector {
             | Operation::BitAnd(a, b)
             | Operation::BitOr(a, b)
             | Operation::BitXor(a, b) => {
-                if let Some(&rx) = self.value_map.get(&a) {
-                    if let Some(&ry) = self.value_map.get(&b) {
-                        gen.push_instruction(RvInstruction::AluOp {
-                            op: match op {
-                                Operation::Add(_, _) => RvAluOp::Add,
-                                Operation::Sub(_, _) => RvAluOp::Sub,
-                                Operation::Mul(_, _) => RvAluOp::Mul,
-                                Operation::Div(_, _) => RvAluOp::Div,
-                                Operation::Mod(_, _) => RvAluOp::Rem,
-                                Operation::Bsl(_, _) => RvAluOp::Sll,
-                                Operation::Bsr(_, _) => RvAluOp::Srl,
-                                Operation::Lt(_, _) => RvAluOp::Slt,
-                                Operation::BitAnd(_, _) => RvAluOp::And,
-                                Operation::BitOr(_, _) => RvAluOp::Or,
-                                Operation::BitXor(_, _) => RvAluOp::Xor,
-                                _ => unreachable!(),
-                            }, rd, rx, ry });
-                    }
-                }
+                let rx = gen.get_vreg(a);
+                let ry = gen.get_vreg(b);
+                gen.push_instruction(RvInstruction::AluOp {
+                    op: match op {
+                        Operation::Add(_, _) => RvAluOp::Add,
+                        Operation::Sub(_, _) => RvAluOp::Sub,
+                        Operation::Mul(_, _) => RvAluOp::Mul,
+                        Operation::Div(_, _) => RvAluOp::Div,
+                        Operation::Mod(_, _) => RvAluOp::Rem,
+                        Operation::Bsl(_, _) => RvAluOp::Sll,
+                        Operation::Bsr(_, _) => RvAluOp::Srl,
+                        Operation::Lt(_, _) => RvAluOp::Slt,
+                        Operation::BitAnd(_, _) => RvAluOp::And,
+                        Operation::BitOr(_, _) => RvAluOp::Or,
+                        Operation::BitXor(_, _) => RvAluOp::Xor,
+                        _ => unreachable!(),
+                    }, rd, rx, ry });
             }
 
             Operation::Eq(a, b) => {
-                if let Some(&ry) = self.value_map.get(&a) {
-                    if let Some(&rx) = self.value_map.get(&b) {
-                        let d1 = VReg::Virtual(self.vreg_index);
-                        self.vreg_index += 1;
-                        gen.push_instruction(RvInstruction::AluOp {
-                            op: RvAluOp::Slt,
-                            rd: d1,
-                            rx,
-                            ry,
-                        });
-                        gen.push_instruction(RvInstruction::AluOpImm {
-                            op: RvAluOp::Slt,
-                            rd: d1,
-                            rx: d1,
-                            imm: 1
-                        });
-                        let d2 = VReg::Virtual(self.vreg_index);
-                        self.vreg_index += 1;
-                        gen.push_instruction(RvInstruction::AluOp {
-                            op: RvAluOp::Slt,
-                            rd: d2,
-                            rx: ry,
-                            ry: rx,
-                        });
-                        gen.push_instruction(RvInstruction::AluOpImm {
-                            op: RvAluOp::Slt,
-                            rd: d2,
-                            rx: d2,
-                            imm: 1
-                        });
-                        gen.push_instruction(RvInstruction::AluOp {
-                            op: RvAluOp::And,
-                            rd,
-                            rx: d1,
-                            ry: d2,
-                        });
-                    }
-                }
+                let rx = gen.get_vreg(b);
+                let ry = gen.get_vreg(a);
+                let d1 = gen.new_unassociated_vreg();
+                gen.push_instruction(RvInstruction::AluOp {
+                    op: RvAluOp::Slt,
+                    rd: d1,
+                    rx,
+                    ry,
+                });
+                gen.push_instruction(RvInstruction::AluOpImm {
+                    op: RvAluOp::Slt,
+                    rd: d1,
+                    rx: d1,
+                    imm: 1
+                });
+                let d2 = gen.new_unassociated_vreg();
+                gen.push_instruction(RvInstruction::AluOp {
+                    op: RvAluOp::Slt,
+                    rd: d2,
+                    rx: ry,
+                    ry: rx,
+                });
+                gen.push_instruction(RvInstruction::AluOpImm {
+                    op: RvAluOp::Slt,
+                    rd: d2,
+                    rx: d2,
+                    imm: 1
+                });
+                gen.push_instruction(RvInstruction::AluOp {
+                    op: RvAluOp::And,
+                    rd,
+                    rx: d1,
+                    ry: d2,
+                });
             }
 
             Operation::Ne(a, b) => {
-                if let Some(&ry) = self.value_map.get(&a) {
-                    if let Some(&rx) = self.value_map.get(&b) {
-                        let d1 = VReg::Virtual(self.vreg_index);
-                        self.vreg_index += 1;
-                        gen.push_instruction(RvInstruction::AluOp {
-                            op: RvAluOp::Slt,
-                            rd: d1,
-                            rx,
-                            ry,
-                        });
-                        let d2 = VReg::Virtual(self.vreg_index);
-                        self.vreg_index += 1;
-                        gen.push_instruction(RvInstruction::AluOp {
-                            op: RvAluOp::Slt,
-                            rd: d2,
-                            rx: ry,
-                            ry: rx,
-                        });
-                        gen.push_instruction(RvInstruction::AluOp {
-                            op: RvAluOp::Or,
-                            rd,
-                            rx: d1,
-                            ry: d2,
-                        });
-                    }
-                }
+                let rx = gen.get_vreg(b);
+                let ry = gen.get_vreg(a);
+                let d1 = gen.new_unassociated_vreg();
+                gen.push_instruction(RvInstruction::AluOp {
+                    op: RvAluOp::Slt,
+                    rd: d1,
+                    rx,
+                    ry,
+                });
+                let d2 = gen.new_unassociated_vreg();
+                gen.push_instruction(RvInstruction::AluOp {
+                    op: RvAluOp::Slt,
+                    rd: d2,
+                    rx: ry,
+                    ry: rx,
+                });
+                gen.push_instruction(RvInstruction::AluOp {
+                    op: RvAluOp::Or,
+                    rd,
+                    rx: d1,
+                    ry: d2,
+                });
             }
 
             Operation::Le(a, b) => {
-                if let Some(&ry) = self.value_map.get(&a) {
-                    if let Some(&rx) = self.value_map.get(&b) {
-                        let d1 = VReg::Virtual(self.vreg_index);
-                        self.vreg_index += 1;
-                        gen.push_instruction(RvInstruction::AluOp {
-                            op: RvAluOp::Slt,
-                            rd: d1,
-                            rx: ry,
-                            ry: rx,
-                        });
-                        gen.push_instruction(RvInstruction::AluOpImm {
-                            op: RvAluOp::Slt,
-                            rd,
-                            rx: d1,
-                            imm: 1
-                        });
-                    }
-                }
+                let rx = gen.get_vreg(b);
+                let ry = gen.get_vreg(a);
+                let d1 = gen.new_unassociated_vreg();
+                gen.push_instruction(RvInstruction::AluOp {
+                    op: RvAluOp::Slt,
+                    rd: d1,
+                    rx: ry,
+                    ry: rx,
+                });
+                gen.push_instruction(RvInstruction::AluOpImm {
+                    op: RvAluOp::Slt,
+                    rd,
+                    rx: d1,
+                    imm: 1
+                });
             }
 
             Operation::Gt(a, b) => {
-                if let Some(&ry) = self.value_map.get(&a) {
-                    if let Some(&rx) = self.value_map.get(&b) {
-                        gen.push_instruction(RvInstruction::AluOp {
-                            op: RvAluOp::Slt,
-                            rd,
-                            rx,
-                            ry,
-                        });
-                    }
-                }
+                let rx = gen.get_vreg(b);
+                let ry = gen.get_vreg(a);
+                gen.push_instruction(RvInstruction::AluOp {
+                    op: RvAluOp::Slt,
+                    rd,
+                    rx,
+                    ry,
+                });
             }
 
             Operation::Ge(a, b) => {
-                if let Some(&ry) = self.value_map.get(&a) {
-                    if let Some(&rx) = self.value_map.get(&b) {
-                        let d1 = VReg::Virtual(self.vreg_index);
-                        self.vreg_index += 1;
-                        gen.push_instruction(RvInstruction::AluOp {
-                            op: RvAluOp::Slt,
-                            rd: d1,
-                            rx,
-                            ry,
-                        });
-                        gen.push_instruction(RvInstruction::AluOpImm {
-                            op: RvAluOp::Slt,
-                            rd,
-                            rx: d1,
-                            imm: 1
-                        });
-                    }
-                }
+                let rx = gen.get_vreg(b);
+                let ry = gen.get_vreg(a);
+                let d1 = gen.new_unassociated_vreg();
+                gen.push_instruction(RvInstruction::AluOp {
+                    op: RvAluOp::Slt,
+                    rd: d1,
+                    rx,
+                    ry,
+                });
+                gen.push_instruction(RvInstruction::AluOpImm {
+                    op: RvAluOp::Slt,
+                    rd,
+                    rx: d1,
+                    imm: 1
+                });
             }
 
             Operation::Phi(mapping) => {
@@ -717,7 +705,36 @@ impl InstructionSelector for RvSelector {
             Operation::GetVar(_) => unreachable!(),
             Operation::SetVar(_, _) => unreachable!(),
 
-            Operation::Call(_, _) => todo!(),
+            Operation::Call(f, args) => {
+                if let Some(&f) = gen.func_map().get(&f) {
+                    let clobbers: Vec<_> = args.into_iter().map(|v| {
+                        let clobber = gen.new_unassociated_vreg();
+
+                        let rx = gen.get_vreg(v);
+                        gen.push_instruction(RvInstruction::AluOp {
+                            op: RvAluOp::Add,
+                            rd: clobber,
+                            rx,
+                            ry: VReg::RealRegister(RV_REGISTER_ZERO),
+                        });
+
+                        clobber
+                    }).collect();
+                    gen.push_instruction(RvInstruction::Jal {
+                        rd: VReg::RealRegister(RV_REGISTER_RA),
+                        location: Location::Function(f),
+                        clobbers,
+                    });
+
+                    gen.push_instruction(RvInstruction::AluOp {
+                        op: RvAluOp::Add,
+                        rd,
+                        rx: VReg::RealRegister(RV_REGISTER_A0),
+                        ry: VReg::RealRegister(RV_REGISTER_ZERO),
+                    });
+                }
+            }
+
             Operation::CallIndirect(_, _) => todo!(),
         }
     }
@@ -731,14 +748,13 @@ impl InstructionSelector for RvSelector {
             }
 
             Terminator::Return(v) => {
-                if let Some(&rx) = self.value_map.get(&v) {
-                    gen.push_instruction(RvInstruction::AluOp {
-                        op: RvAluOp::Add,
-                        rd: VReg::RealRegister(RV_REGISTER_A0),
-                        rx,
-                        ry: VReg::RealRegister(RV_REGISTER_ZERO),
-                    });
-                }
+                let rx = gen.get_vreg(v);
+                gen.push_instruction(RvInstruction::AluOp {
+                    op: RvAluOp::Add,
+                    rd: VReg::RealRegister(RV_REGISTER_A0),
+                    rx,
+                    ry: VReg::RealRegister(RV_REGISTER_ZERO),
+                });
 
                 gen.push_instruction(RvInstruction::Ret);
             }
@@ -748,65 +764,62 @@ impl InstructionSelector for RvSelector {
                     gen.push_instruction(RvInstruction::Jal {
                         rd: VReg::RealRegister(RV_REGISTER_ZERO),
                         location: Location::InternalLabel(label),
+                        clobbers: Vec::new(),
                     });
                 }
             }
 
             Terminator::Branch(v, l1, l2) => {
-                if let Some(&rx) = self.value_map.get(&v) {
-                    if let Some(&l1) = gen.label_map().get(&l1) {
-                        gen.push_instruction(RvInstruction::Bne {
-                            rx,
-                            ry: VReg::RealRegister(RV_REGISTER_ZERO),
-                            location: Location::InternalLabel(l1),
-                        });
-                    }
-                    if let Some(&l2) = gen.label_map().get(&l2) {
-                        gen.push_instruction(RvInstruction::Jal {
-                            rd: VReg::RealRegister(RV_REGISTER_ZERO),
-                            location: Location::InternalLabel(l2),
-                        });
-                    }
+                let rx = gen.get_vreg(v);
+                if let Some(&l1) = gen.label_map().get(&l1) {
+                    gen.push_instruction(RvInstruction::Bne {
+                        rx,
+                        ry: VReg::RealRegister(RV_REGISTER_ZERO),
+                        location: Location::InternalLabel(l1),
+                    });
+                }
+                if let Some(&l2) = gen.label_map().get(&l2) {
+                    gen.push_instruction(RvInstruction::Jal {
+                        rd: VReg::RealRegister(RV_REGISTER_ZERO),
+                        location: Location::InternalLabel(l2),
+                        clobbers: Vec::new(),
+                    });
                 }
             }
         }
     }
 
     fn post_function_generation(&mut self, func: &mut Function<Self::Instruction>, gen: &mut VCodeGenerator<Self::Instruction, Self>) {
-    }
-
-    fn post_generation(&mut self, vcode: &mut VCode<Self::Instruction>) {
-        for func in vcode.functions.iter_mut() {
-            let mut v = Vec::new();
-            for (i, labelled) in func.labels.iter().enumerate() {
-                for (j, instr) in labelled.instructions.iter().enumerate() {
-                    if let RvInstruction::PhiPlaceholder { .. } = instr {
-                        v.push((i, j));
-                    }
+        let mut v = Vec::new();
+        for (i, labelled) in func.labels.iter().enumerate() {
+            for (j, instr) in labelled.instructions.iter().enumerate() {
+                if let RvInstruction::PhiPlaceholder { .. } = instr {
+                    v.push((i, j));
                 }
             }
+        }
 
-            for (label_index, instr_index) in v.into_iter().rev() {
-                let phi = func.labels[label_index].instructions.remove(instr_index);
-                if let RvInstruction::PhiPlaceholder { rd, options } = phi {
-                    for (label, v) in options {
-                        if let Location::InternalLabel(label) = label {
-                            if let Some(&rx) = self.value_map.get(&v) {
-                                let labelled = &mut func.labels[label];
-                                labelled.instructions.insert(
-                                    labelled.instructions.len() - 1,
-                                    RvInstruction::AluOp {
-                                        op: RvAluOp::Add,
-                                        rd,
-                                        rx,
-                                        ry: VReg::RealRegister(RV_REGISTER_ZERO),
-                                    },
-                                );
-                            }
-                        }
+        for (label_index, instr_index) in v.into_iter().rev() {
+            let phi = func.labels[label_index].instructions.remove(instr_index);
+            if let RvInstruction::PhiPlaceholder { rd, options } = phi {
+                for (label, v) in options {
+                    if let Location::InternalLabel(label) = label {
+                        let rx = gen.get_vreg(v);
+                        let labelled = &mut func.labels[label];
+                        labelled.instructions.insert(
+                            labelled.instructions.len() - 1,
+                            RvInstruction::AluOp {
+                                op: RvAluOp::Add,
+                                rd,
+                                rx,
+                                ry: VReg::RealRegister(RV_REGISTER_ZERO),
+                            },
+                        );
                     }
                 }
             }
         }
     }
+
+    fn post_generation(&mut self, _vcode: &mut VCode<Self::Instruction>) { }
 }

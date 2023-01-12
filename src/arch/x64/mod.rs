@@ -869,6 +869,5 @@ impl InstructionSelector for X64Selector {
         }
     }
 
-    fn post_generation(&mut self, _vcode: &mut VCode<Self::Instruction>) {
-    }
+    fn post_generation(&mut self, _vcode: &mut VCode<Self::Instruction>) { }
 }

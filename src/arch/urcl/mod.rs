@@ -884,7 +884,7 @@ impl InstructionSelector for UrclSelector {
         }
     }
 
-    fn post_function_generation(&mut self, func: &mut Function<Self::Instruction>, gen: &mut VCodeGenerator<Self::Instruction, Self>) {
+    fn post_function_generation(&mut self, _func: &mut Function<Self::Instruction>, _gen: &mut VCodeGenerator<Self::Instruction, Self>) {
     }
 
     fn post_generation(&mut self, vcode: &mut VCode<Self::Instruction>) {
