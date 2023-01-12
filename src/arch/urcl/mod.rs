@@ -5,7 +5,7 @@ use crate::{
     regalloc::RegisterAllocator,
 };
 
-use super::{Instr, InstructionSelector, Location, VCode, VCodeGenerator, VReg};
+use super::{Instr, InstructionSelector, Location, VCode, VCodeGenerator, VReg, Function};
 
 pub const URCL_REGISTER_ZERO: usize = 0;
 pub const URCL_REGISTER_PC: usize = 1;
@@ -216,6 +216,10 @@ impl Instr for UrclInstruction {
             VReg::RealRegister(URCL_REGISTER_R7),
             VReg::RealRegister(URCL_REGISTER_R8),
         ]
+    }
+
+    fn get_arg_regs() -> Vec<VReg> {
+        vec![]
     }
 
     fn collect_registers<A>(&self, alloc: &mut A)
@@ -846,6 +850,9 @@ impl InstructionSelector for UrclSelector {
                 }
             }
         }
+    }
+
+    fn post_function_generation(&mut self, func: &mut Function<Self::Instruction>, gen: &mut VCodeGenerator<Self::Instruction, Self>) {
     }
 
     fn post_generation(&mut self, vcode: &mut VCode<Self::Instruction>) {

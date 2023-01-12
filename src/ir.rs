@@ -33,7 +33,7 @@ impl Module {
         let mut selector = S::default();
 
         for (i, function) in self.functions.iter().enumerate() {
-            gen.add_function(&function.name, FunctionId(i));
+            gen.add_function(&function.name, FunctionId(i), function.arg_types.len());
         }
 
         for (f, func) in self.functions.into_iter().enumerate() {
@@ -57,6 +57,8 @@ impl Module {
                 }
                 selector.select_term(&mut gen, block.terminator);
             }
+
+            gen.post_function(&mut selector);
         }
 
         gen.build(selector)
@@ -108,13 +110,13 @@ impl Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "function {} @{}(", self.ret_type, self.name)?;
         let mut first = true;
-        for arg_type in self.arg_types.iter() {
+        for (i, arg_type) in self.arg_types.iter().enumerate() {
             if first {
                 first = false;
             } else {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", arg_type)?;
+            write!(f, "%{}: {}", i, arg_type)?;
         }
         writeln!(f, ") {{")?;
 
@@ -499,7 +501,7 @@ impl Display for Terminator {
 
 /// [`Value`] represents a reference to a value in an IR function.
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
-pub struct Value(usize);
+pub struct Value(pub(crate) usize);
 
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -622,6 +624,10 @@ impl ModuleBuilder {
             }
 
             let mut var_map = HashMap::new();
+            for arg in 0..func.arg_types.len() {
+                var_map.insert((VariableId(arg), 0), Value(arg));
+            }
+
             let mut phi_to_var_map = HashMap::new();
             for (i, block) in func.blocks.iter_mut().enumerate() {
                 if block.deleted {
@@ -737,7 +743,7 @@ impl ModuleBuilder {
                 })
                 .collect(),
             blocks: Vec::new(),
-            value_index: 0,
+            value_index: args.len(),
         });
         FunctionId(id)
     }

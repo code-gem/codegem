@@ -77,6 +77,7 @@ where
     I: Instr,
 {
     pub name: String,
+    pub arg_count: usize,
     pub labels: Vec<LabelledInstructions<I>>,
 }
 
@@ -137,6 +138,9 @@ pub trait Instr: Sized {
     /// Gets the registers available for selection by the register allocator.
     fn get_regs() -> Vec<VReg>;
 
+    /// Gets the registers that can be used as function arguments.
+    fn get_arg_regs() -> Vec<VReg>;
+
     /// Performs transformations on the [`VCode`] that are mandatory after register allocation.
     fn mandatory_transforms(vcode: &mut VCode<Self>);
 
@@ -171,6 +175,8 @@ pub trait InstructionSelector: Default {
     /// Selects an instruction to use for a given [`Terminator`].
     fn select_term(&mut self, gen: &mut VCodeGenerator<Self::Instruction, Self>, op: Terminator);
 
+    fn post_function_generation(&mut self, func: &mut Function<Self::Instruction>, gen: &mut VCodeGenerator<Self::Instruction, Self>);
+
     /// Performs post generation transforms on the [`VCode`].
     fn post_generation(&mut self, vcode: &mut VCode<Self::Instruction>);
 }
@@ -187,6 +193,8 @@ where
     label_map: HashMap<BasicBlockId, usize>,
     current_function: Option<usize>,
     current_block: Option<usize>,
+    value_map: HashMap<Value, VReg>,
+    vreg_index: usize,
 }
 
 impl<I, S> VCodeGenerator<I, S>
@@ -205,8 +213,38 @@ where
             label_map: HashMap::new(),
             current_function: None,
             current_block: None,
+            value_map: HashMap::new(),
+            vreg_index: 0,
         }
     }
+
+    /// Gets the [`VReg`] associated with the given [`Value`].
+    pub fn get_vreg(&mut self, value: Value) -> VReg {
+        let args = I::get_arg_regs();
+        let arg_count = self.current_function.and_then(|v| self.internal.functions.get(v)).map(|v| v.arg_count).unwrap_or(0);
+        if value.0 < arg_count {
+            if value.0 < args.len() {
+                args[value.0]
+            } else {
+                todo!();
+            }
+        } else if let Some(&reg) = self.value_map.get(&value) {
+            reg
+        } else {
+            let reg = VReg::Virtual(self.vreg_index);
+            self.vreg_index += 1;
+            self.value_map.insert(value, reg);
+            reg
+        }
+    }
+
+    /// Creates a new [`VReg`] that is unassociated with any [`Value`].
+    pub fn new_unassociated_vreg(&mut self) -> VReg {
+        let reg = VReg::Virtual(self.vreg_index);
+        self.vreg_index += 1;
+        reg
+    }
+
 
     /// Returns the map from IR [`FunctionId`]s to indexes into the [`VCode`]'s list of functions.
     pub fn func_map(&self) -> &HashMap<FunctionId, usize> {
@@ -219,10 +257,11 @@ where
         &self.label_map
     }
 
-    pub(crate) fn add_function(&mut self, name: &str, id: FunctionId) {
+    pub(crate) fn add_function(&mut self, name: &str, id: FunctionId, arg_count: usize) {
         let f = self.internal.functions.len();
         self.internal.functions.push(Function {
             name: name.to_owned(),
+            arg_count,
             labels: Vec::new(),
         });
         self.func_map.insert(id, f);
@@ -231,6 +270,8 @@ where
     pub(crate) fn switch_to_function(&mut self, id: FunctionId) {
         self.current_function = self.func_map.get(&id).cloned();
         self.label_map.clear();
+        self.value_map.clear();
+        self.vreg_index = 0;
     }
 
     pub(crate) fn push_label(&mut self, id: BasicBlockId) {
@@ -260,6 +301,18 @@ where
                 labelled.instructions.push(instruction);
             }
         }
+    }
+
+    pub(crate) fn post_function(&mut self, selector: &mut S) {
+        let mut internal = VCode {
+            name: String::new(),
+            functions: Vec::new(),
+        };
+        std::mem::swap(&mut internal, &mut self.internal);
+        if let Some(func) = self.current_function.and_then(|v| internal.functions.get_mut(v)) {
+            selector.post_function_generation(func, self);
+        }
+        std::mem::swap(&mut internal, &mut self.internal);
     }
 
     pub(crate) fn build(mut self, mut selector: S) -> VCode<I> {

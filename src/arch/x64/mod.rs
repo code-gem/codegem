@@ -57,7 +57,7 @@ use crate::{
     regalloc::RegisterAllocator,
 };
 
-use super::{Instr, InstructionSelector, Location, VCode, VCodeGenerator, VReg};
+use super::{Instr, InstructionSelector, Location, VCode, VCodeGenerator, VReg, Function};
 
 pub const X64_REGISTER_RAX: usize = 0;
 pub const X64_REGISTER_RBX: usize = 1;
@@ -186,6 +186,11 @@ pub enum X64Instruction {
     Pop {
         dest: VReg,
     },
+
+    Call {
+        location: Location,
+        clobbers: Vec<VReg>,
+    },
 }
 
 impl Display for X64Instruction {
@@ -205,6 +210,7 @@ impl Display for X64Instruction {
             X64Instruction::Ret => write!(f, "ret"),
             X64Instruction::Push { source } => write!(f, "push {}", source),
             X64Instruction::Pop { dest } => write!(f, "pop {}", dest),
+            X64Instruction::Call { location, .. } => write!(f, "call {}", location),
         }
     }
 }
@@ -226,6 +232,17 @@ impl Instr for X64Instruction {
             VReg::RealRegister(X64_REGISTER_R13),
             VReg::RealRegister(X64_REGISTER_R14),
             VReg::RealRegister(X64_REGISTER_R15),
+        ]
+    }
+
+    fn get_arg_regs() -> Vec<VReg> {
+        vec![
+            VReg::RealRegister(X64_REGISTER_RDI),
+            VReg::RealRegister(X64_REGISTER_RSI),
+            VReg::RealRegister(X64_REGISTER_RDX),
+            VReg::RealRegister(X64_REGISTER_RCX),
+            VReg::RealRegister(X64_REGISTER_R8),
+            VReg::RealRegister(X64_REGISTER_R9),
         ]
     }
 
@@ -291,6 +308,13 @@ impl Instr for X64Instruction {
             X64Instruction::Push { .. } => (),
 
             X64Instruction::Pop { .. } => (),
+
+            X64Instruction::Call { clobbers, .. } => {
+                for (clobber, arg) in clobbers.iter().zip(X64Instruction::get_arg_regs().into_iter()) {
+                    alloc.add_use(*clobber);
+                    alloc.force_same(*clobber, arg);
+                }
+            }
         }
     }
 
@@ -376,6 +400,8 @@ impl Instr for X64Instruction {
             X64Instruction::Push { .. } => (),
 
             X64Instruction::Pop { .. } => (),
+
+            X64Instruction::Call { .. } => (),
         }
     }
 
@@ -386,9 +412,16 @@ impl Instr for X64Instruction {
                 for (i, instruction) in labelled.instructions.iter().enumerate() {
                     match instruction {
                         X64Instruction::AluOp { dest, source, .. }
-                        | X64Instruction::Mov { dest, source } => {
+                        | X64Instruction::Mov { dest, source }
+                        | X64Instruction::CMov { dest, source, .. } => {
                             if let (VReg::Spilled(_), VReg::Spilled(_)) = (*dest, *source) {
                                 swaps.push((i, *source));
+                            }
+                        }
+
+                        X64Instruction::Cmp { a, b } => {
+                            if let (VReg::Spilled(_), VReg::Spilled(_)) = (*a, *b) {
+                                swaps.push((i, *b));
                             }
                         }
 
@@ -408,8 +441,13 @@ impl Instr for X64Instruction {
 
                     match &mut labelled.instructions[index + 2] {
                         X64Instruction::AluOp { source, .. }
-                        | X64Instruction::Mov { source, .. } => {
+                        | X64Instruction::Mov { source, .. }
+                        | X64Instruction::CMov { source, .. } => {
                             *source = VReg::RealRegister(X64_REGISTER_RAX);
+                        }
+
+                        X64Instruction::Cmp { b, .. } => {
+                            *b = VReg::RealRegister(X64_REGISTER_RAX);
                         }
 
                         _ => (),
@@ -501,6 +539,17 @@ impl Instr for X64Instruction {
                                 X64Instruction::Pop { dest } => {
                                     let _ = writeln!(file, "    pop {}", register(*dest));
                                 }
+
+                                X64Instruction::Call { location, .. } => {
+                                    match *location {
+                                        Location::InternalLabel(_) => {
+                                            let _ = writeln!(file, "    call {}", location);
+                                        }
+                                        Location::Function(f) => {
+                                            let _ = writeln!(file, "    call {}", vcode.functions[f].name);
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -546,10 +595,7 @@ fn register(reg: VReg) -> String {
 }
 
 #[derive(Default)]
-pub struct X64Selector {
-    value_map: HashMap<Value, VReg>,
-    vreg_index: usize,
-}
+pub struct X64Selector;
 
 impl InstructionSelector for X64Selector {
     type Instruction = X64Instruction;
@@ -561,19 +607,13 @@ impl InstructionSelector for X64Selector {
         _type_: Type,
         op: Operation,
     ) {
-        let dest = result.map(|v| {
-            let dest = VReg::Virtual(self.vreg_index);
-            self.vreg_index += 1;
-            self.value_map.insert(v, dest);
-            dest
-        });
+        let dest = result.map(|v| gen.get_vreg(v));
 
         match op {
             Operation::Identity(value) => {
                 if let Some(dest) = dest {
-                    if let Some(&source) = self.value_map.get(&value) {
-                        gen.push_instruction(X64Instruction::Mov { dest, source });
-                    }
+                    let source = gen.get_vreg(value);
+                    gen.push_instruction(X64Instruction::Mov { dest, source, });
                 }
             }
 
@@ -596,87 +636,76 @@ impl InstructionSelector for X64Selector {
             | Operation::BitOr(a, b)
             | Operation::BitXor(a, b) => {
                 if let Some(dest) = dest {
-                    if let Some(&source) = self.value_map.get(&a) {
-                        gen.push_instruction(X64Instruction::Mov { dest, source });
-                        if let Some(&source) = self.value_map.get(&b) {
-                            gen.push_instruction(X64Instruction::AluOp { op: match op {
-                                Operation::Add(_, _) => X64AluOp::Add,
-                                Operation::Sub(_, _) => X64AluOp::Sub,
-                                Operation::Mul(_, _) => X64AluOp::IMul,
-                                Operation::BitAnd(_, _) => X64AluOp::And,
-                                Operation::BitOr(_, _) => X64AluOp::Or,
-                                Operation::BitXor(_, _) => X64AluOp::Xor,
-                                _ => unreachable!(),
-                            }, dest, source });
-                        }
-                    }
+                    let source = gen.get_vreg(a);
+                    gen.push_instruction(X64Instruction::Mov { dest, source });
+                    let source = gen.get_vreg(b);
+                    gen.push_instruction(X64Instruction::AluOp { op: match op {
+                        Operation::Add(_, _) => X64AluOp::Add,
+                        Operation::Sub(_, _) => X64AluOp::Sub,
+                        Operation::Mul(_, _) => X64AluOp::IMul,
+                        Operation::BitAnd(_, _) => X64AluOp::And,
+                        Operation::BitOr(_, _) => X64AluOp::Or,
+                        Operation::BitXor(_, _) => X64AluOp::Xor,
+                        _ => unreachable!(),
+                    }, dest, source });
                 }
             }
 
             Operation::Div(a, b) => {
                 if let Some(dest) = dest {
-                    if let Some(&a) = self.value_map.get(&a) {
-                        if let Some(&source) = self.value_map.get(&b) {
-                            let rem = VReg::Virtual(self.vreg_index);
-                            self.vreg_index += 1;
-                            gen.push_instruction(X64Instruction::Mov {
-                                dest,
-                                source: a,
-                            });
-                            gen.push_instruction(X64Instruction::Integer {
-                                dest: rem,
-                                value: 0,
-                            });
-                            gen.push_instruction(X64Instruction::DivRem {
-                                rem,
-                                div: dest,
-                                source,
-                            });
-                        }
-                    }
+                    let source = gen.get_vreg(a);
+                    gen.push_instruction(X64Instruction::Mov {
+                        dest,
+                        source,
+                    });
+                    let rem = gen.new_unassociated_vreg();
+                    gen.push_instruction(X64Instruction::Integer {
+                        dest: rem,
+                        value: 0,
+                    });
+                    let source = gen.get_vreg(b);
+                    gen.push_instruction(X64Instruction::DivRem {
+                        rem,
+                        div: dest,
+                        source,
+                    });
                 }
             }
 
             Operation::Mod(a, b) => {
                 if let Some(dest) = dest {
-                    if let Some(&a) = self.value_map.get(&a) {
-                        if let Some(&source) = self.value_map.get(&b) {
-                            let div = VReg::Virtual(self.vreg_index);
-                            self.vreg_index += 1;
-                            gen.push_instruction(X64Instruction::Mov {
-                                dest: div,
-                                source: a,
-                            });
-                            gen.push_instruction(X64Instruction::Integer {
-                                dest,
-                                value: 0,
-                            });
-                            gen.push_instruction(X64Instruction::DivRem {
-                                rem: dest,
-                                div,
-                                source,
-                            });
-                        }
-                    }
+                    let div = gen.new_unassociated_vreg();
+                    let source = gen.get_vreg(a);
+                    gen.push_instruction(X64Instruction::Mov {
+                        dest: div,
+                        source,
+                    });
+                    gen.push_instruction(X64Instruction::Integer {
+                        dest,
+                        value: 0,
+                    });
+                    let source = gen.get_vreg(b);
+                    gen.push_instruction(X64Instruction::DivRem {
+                        rem: dest,
+                        div,
+                        source,
+                    });
                 }
             }
 
             Operation::Bsl(a, b)
             | Operation::Bsr(a, b) => {
                 if let Some(dest) = dest {
-                    if let Some(&source) = self.value_map.get(&a) {
-                        gen.push_instruction(X64Instruction::Mov { dest, source });
-                        if let Some(&b) = self.value_map.get(&b) {
-                            let source = VReg::Virtual(self.vreg_index);
-                            self.vreg_index += 1;
-                            gen.push_instruction(X64Instruction::Mov { dest: source, source: b });
-                            gen.push_instruction(X64Instruction::BitShift {
-                                left: matches!(op, Operation::Bsl(_, _)),
-                                dest,
-                                source,
-                            });
-                        }
-                    }
+                    let source = gen.get_vreg(a);
+                    gen.push_instruction(X64Instruction::Mov { dest, source });
+                    let b = gen.get_vreg(b);
+                    let source = gen.new_unassociated_vreg();
+                    gen.push_instruction(X64Instruction::Mov { dest: source, source: b });
+                    gen.push_instruction(X64Instruction::BitShift {
+                        left: matches!(op, Operation::Bsl(_, _)),
+                        dest,
+                        source,
+                    });
                 }
             }
 
@@ -687,37 +716,34 @@ impl InstructionSelector for X64Selector {
             | Operation::Gt(a, b)
             | Operation::Ge(a, b) => {
                 if let Some(dest) = dest {
-                    if let Some(&a) = self.value_map.get(&a) {
-                        if let Some(&b) = self.value_map.get(&b) {
-                            gen.push_instruction(X64Instruction::Integer {
-                                dest,
-                                value: 0,
-                            });
-                            gen.push_instruction(X64Instruction::Cmp {
-                                a,
-                                b,
-                            });
-                            let source = VReg::Virtual(self.vreg_index);
-                            self.vreg_index += 1;
-                            gen.push_instruction(X64Instruction::Integer {
-                                dest: source,
-                                value: 1,
-                            });
-                            gen.push_instruction(X64Instruction::CMov {
-                                op: match op {
-                                    Operation::Eq(_, _) => X64CMovOp::Eq,
-                                    Operation::Ne(_, _) => X64CMovOp::Ne,
-                                    Operation::Lt(_, _) => X64CMovOp::Lt,
-                                    Operation::Le(_, _) => X64CMovOp::Le,
-                                    Operation::Gt(_, _) => X64CMovOp::Gt,
-                                    Operation::Ge(_, _) => X64CMovOp::Ge,
-                                    _ => unreachable!(),
-                                },
-                                dest,
-                                source,
-                            });
-                        }
-                    }
+                    let a = gen.get_vreg(a);
+                    let b = gen.get_vreg(b);
+                    gen.push_instruction(X64Instruction::Integer {
+                        dest,
+                        value: 0,
+                    });
+                    gen.push_instruction(X64Instruction::Cmp {
+                        a,
+                        b,
+                    });
+                    let source = gen.new_unassociated_vreg();
+                    gen.push_instruction(X64Instruction::Integer {
+                        dest: source,
+                        value: 1,
+                    });
+                    gen.push_instruction(X64Instruction::CMov {
+                        op: match op {
+                            Operation::Eq(_, _) => X64CMovOp::Eq,
+                            Operation::Ne(_, _) => X64CMovOp::Ne,
+                            Operation::Lt(_, _) => X64CMovOp::Lt,
+                            Operation::Le(_, _) => X64CMovOp::Le,
+                            Operation::Gt(_, _) => X64CMovOp::Gt,
+                            Operation::Ge(_, _) => X64CMovOp::Ge,
+                            _ => unreachable!(),
+                        },
+                        dest,
+                        source,
+                    });
                 }
             }
 
@@ -742,7 +768,33 @@ impl InstructionSelector for X64Selector {
             Operation::GetVar(_) => unreachable!(),
             Operation::SetVar(_, _) => unreachable!(),
 
-            Operation::Call(_, _) => todo!(),
+            Operation::Call(f, args) => {
+                if let Some(&f) = gen.func_map().get(&f) {
+                    let clobbers: Vec<_> = args.into_iter().map(|v| {
+                        let clobber = gen.new_unassociated_vreg();
+
+                        let source = gen.get_vreg(v);
+                        gen.push_instruction(X64Instruction::Mov {
+                            dest: clobber,
+                            source,
+                        });
+
+                        clobber
+                    }).collect();
+                    gen.push_instruction(X64Instruction::Call {
+                        location: Location::Function(f),
+                        clobbers,
+                    });
+
+                    if let Some(dest) = dest {
+                        gen.push_instruction(X64Instruction::Mov {
+                            dest,
+                            source: VReg::RealRegister(X64_REGISTER_RAX),
+                        });
+                    }
+                }
+            }
+
             Operation::CallIndirect(_, _) => todo!(),
         }
     }
@@ -756,12 +808,11 @@ impl InstructionSelector for X64Selector {
             }
 
             Terminator::Return(v) => {
-                if let Some(&source) = self.value_map.get(&v) {
-                    gen.push_instruction(X64Instruction::Mov {
-                        dest: VReg::RealRegister(X64_REGISTER_RAX),
-                        source,
-                    });
-                }
+                let source = gen.get_vreg(v);
+                gen.push_instruction(X64Instruction::Mov {
+                    dest: VReg::RealRegister(X64_REGISTER_RAX),
+                    source,
+                });
 
                 gen.push_instruction(X64Instruction::Ret);
             }
@@ -775,17 +826,43 @@ impl InstructionSelector for X64Selector {
             }
 
             Terminator::Branch(v, l1, l2) => {
-                if let Some(&source) = self.value_map.get(&v) {
-                    gen.push_instruction(X64Instruction::CmpZero { source });
-                    if let Some(&l1) = gen.label_map().get(&l1) {
-                        gen.push_instruction(X64Instruction::Jne {
-                            location: Location::InternalLabel(l1),
-                        });
-                    }
-                    if let Some(&l2) = gen.label_map().get(&l2) {
-                        gen.push_instruction(X64Instruction::Jmp {
-                            location: Location::InternalLabel(l2),
-                        });
+                let source = gen.get_vreg(v);
+                gen.push_instruction(X64Instruction::CmpZero { source });
+                if let Some(&l1) = gen.label_map().get(&l1) {
+                    gen.push_instruction(X64Instruction::Jne {
+                        location: Location::InternalLabel(l1),
+                    });
+                }
+                if let Some(&l2) = gen.label_map().get(&l2) {
+                    gen.push_instruction(X64Instruction::Jmp {
+                        location: Location::InternalLabel(l2),
+                    });
+                }
+            }
+        }
+    }
+
+    fn post_function_generation(&mut self, func: &mut Function<Self::Instruction>, gen: &mut VCodeGenerator<Self::Instruction, Self>) {
+        let mut v = Vec::new();
+        for (i, labelled) in func.labels.iter().enumerate() {
+            for (j, instr) in labelled.instructions.iter().enumerate() {
+                if let X64Instruction::PhiPlaceholder { .. } = instr {
+                    v.push((i, j));
+                }
+            }
+        }
+
+        for (label_index, instr_index) in v.into_iter().rev() {
+            let phi = func.labels[label_index].instructions.remove(instr_index);
+            if let X64Instruction::PhiPlaceholder { dest, options } = phi {
+                for (label, v) in options {
+                    if let Location::InternalLabel(label) = label {
+                    let source = gen.get_vreg(v);
+                        let labelled = &mut func.labels[label];
+                        labelled.instructions.insert(
+                            labelled.instructions.len() - 1,
+                            X64Instruction::Mov { dest, source },
+                        );
                     }
                 }
             }
@@ -793,32 +870,5 @@ impl InstructionSelector for X64Selector {
     }
 
     fn post_generation(&mut self, vcode: &mut VCode<Self::Instruction>) {
-        for func in vcode.functions.iter_mut() {
-            let mut v = Vec::new();
-            for (i, labelled) in func.labels.iter().enumerate() {
-                for (j, instr) in labelled.instructions.iter().enumerate() {
-                    if let X64Instruction::PhiPlaceholder { .. } = instr {
-                        v.push((i, j));
-                    }
-                }
-            }
-
-            for (label_index, instr_index) in v.into_iter().rev() {
-                let phi = func.labels[label_index].instructions.remove(instr_index);
-                if let X64Instruction::PhiPlaceholder { dest, options } = phi {
-                    for (label, v) in options {
-                        if let Location::InternalLabel(label) = label {
-                            if let Some(&source) = self.value_map.get(&v) {
-                                let labelled = &mut func.labels[label];
-                                labelled.instructions.insert(
-                                    labelled.instructions.len() - 1,
-                                    X64Instruction::Mov { dest, source },
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }

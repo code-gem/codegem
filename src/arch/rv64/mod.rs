@@ -5,7 +5,7 @@ use crate::{
     regalloc::RegisterAllocator,
 };
 
-use super::{Instr, InstructionSelector, Location, VCode, VCodeGenerator, VReg};
+use super::{Instr, InstructionSelector, Location, VCode, VCodeGenerator, VReg, Function};
 
 pub const RV_REGISTER_ZERO: usize = 0;
 pub const RV_REGISTER_RA: usize = 1;
@@ -177,6 +177,10 @@ impl Instr for RvInstruction {
             VReg::RealRegister(RV_REGISTER_S10),
             VReg::RealRegister(RV_REGISTER_S11),
         ]
+    }
+
+    fn get_arg_regs() -> Vec<VReg> {
+        vec![]
     }
 
     fn collect_registers<A>(&self, alloc: &mut A)
@@ -766,6 +770,9 @@ impl InstructionSelector for RvSelector {
                 }
             }
         }
+    }
+
+    fn post_function_generation(&mut self, func: &mut Function<Self::Instruction>, gen: &mut VCodeGenerator<Self::Instruction, Self>) {
     }
 
     fn post_generation(&mut self, vcode: &mut VCode<Self::Instruction>) {
