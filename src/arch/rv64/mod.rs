@@ -1,8 +1,8 @@
 use std::{collections::HashMap, fmt::Display, fs::File, io::Write};
 
-use crate::codegen::{
+use crate::{
     ir::{Operation, Terminator, Type, Value},
-    RegisterAllocator,
+    regalloc::RegisterAllocator,
 };
 
 use super::{Instr, InstructionSelector, Location, VCode, VCodeGenerator, VReg};
