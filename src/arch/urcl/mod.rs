@@ -147,6 +147,42 @@ pub enum UrclInstruction {
     Ret,
 
     Hlt,
+
+    Sete {
+        rd: VReg,
+        rx: VReg,
+        ry: VReg
+    },
+
+    Setne {
+        rd: VReg,
+        rx: VReg,
+        ry: VReg
+    },
+
+    Setg {
+        rd: VReg,
+        rx: VReg,
+        ry: VReg
+    },
+
+    Setge {
+        rd: VReg,
+        rx: VReg,
+        ry: VReg
+    },
+
+    Setl {
+        rd: VReg,
+        rx: VReg,
+        ry: VReg
+    },
+
+    Setle {
+        rd: VReg,
+        rx: VReg,
+        ry: VReg
+    },
 }
 
 
@@ -200,6 +236,18 @@ impl Display for UrclInstruction {
             UrclInstruction::Cal { location } => write!(f, "cal {}", location),
 
             UrclInstruction::Ret => write!(f, "ret"),
+
+            UrclInstruction::Sete { rd, rx, ry } => write!(f, "Sete {} {} {}", rd, rx, ry),
+
+            UrclInstruction::Setne { rd, rx, ry } => write!(f, "setne {} {} {}", rd, rx, ry),
+
+            UrclInstruction::Setg { rd, rx, ry } => write!(f, "setg {} {} {}", rd, rx, ry),
+
+            UrclInstruction::Setge { rd, rx, ry } => write!(f, "setge {} {} {}", rd, rx, ry),
+
+            UrclInstruction::Setl { rd, rx, ry } => write!(f, "setl {} {} {}", rd, rx, ry),
+
+            UrclInstruction::Setle { rd, rx, ry } => write!(f, "setle {} {} {}", rd, rx, ry),
         }
     }
 }
@@ -231,12 +279,6 @@ impl Instr for UrclInstruction {
 
             UrclInstruction::Imm { rd, .. } => {
                 alloc.add_def(*rd);
-            }
-
-            UrclInstruction::Add { rd, rx, ry } => {
-                alloc.add_def(*rd);
-                alloc.add_use(*rx);
-                alloc.add_use(*ry);
             }
 
             UrclInstruction::Jmp { .. } => (),
@@ -281,65 +323,34 @@ impl Instr for UrclInstruction {
                 alloc.add_use(*ry);
             }
 
-            UrclInstruction::Sub { rd, rx, ry } => {
-                alloc.add_def(*rd);
-                alloc.add_use(*rx);
-                alloc.add_use(*ry);
-            }
 
-            UrclInstruction::Mlt { rd, rx, ry } => {
-                alloc.add_def(*rd);
-                alloc.add_use(*rx);
-                alloc.add_use(*ry);
-            }
-
-            UrclInstruction::Div { rd, rx, ry } => {
-                alloc.add_def(*rd);
-                alloc.add_use(*rx);
-                alloc.add_use(*ry);
-            }
-
-            UrclInstruction::Mod { rd, rx, ry } => {
-                alloc.add_def(*rd);
-                alloc.add_use(*rx);
-                alloc.add_use(*ry);
-            }
-
-            UrclInstruction::And { rd, rx, ry } => {
-                alloc.add_def(*rd);
-                alloc.add_use(*rx);
-                alloc.add_use(*ry);
-            }
-
-            UrclInstruction::Or { rd, rx, ry } => {
-                alloc.add_def(*rd);
-                alloc.add_use(*rx);
-                alloc.add_use(*ry);
-            }
-
-            UrclInstruction::Xor { rd, rx, ry } => {
-                alloc.add_def(*rd);
-                alloc.add_use(*rx);
-                alloc.add_use(*ry);
-            }
-
-            UrclInstruction::Bsl { rd, rx, ry } => {
-                alloc.add_def(*rd);
-                alloc.add_use(*rx);
-                alloc.add_use(*ry);
-            }
-
-            UrclInstruction::Bsr { rd, rx, ry } => {
-                alloc.add_def(*rd);
-                alloc.add_use(*rx);
-                alloc.add_use(*ry);
-            }
 
             UrclInstruction::Hlt => (),
 
             UrclInstruction::Cal { .. } => (),
 
-            UrclInstruction::Ret => ()
+            UrclInstruction::Ret => (),
+
+            UrclInstruction::Sub { rd, rx, ry }
+            | UrclInstruction::Mlt { rd, rx, ry }
+            | UrclInstruction::Add { rd, rx, ry }
+            | UrclInstruction::Div { rd, rx, ry }
+            | UrclInstruction::Mod { rd, rx, ry }
+            | UrclInstruction::And { rd, rx, ry }
+            | UrclInstruction::Bsl { rd, rx, ry }
+            | UrclInstruction::Bsr { rd, rx, ry }
+            | UrclInstruction::Xor { rd, rx, ry }
+            | UrclInstruction::Or { rd, rx, ry }
+            | UrclInstruction::Sete { rd, rx, ry }
+            | UrclInstruction::Setne { rd, rx, ry }
+            | UrclInstruction::Setg { rd, rx, ry }
+            | UrclInstruction::Setge { rd, rx, ry }
+            | UrclInstruction::Setl { rd, rx, ry }
+            | UrclInstruction::Setle { rd, rx, ry } => {
+                alloc.add_def(*rd);
+                alloc.add_use(*rx);
+                alloc.add_use(*ry);
+            }
         }
     }
 
@@ -352,12 +363,6 @@ impl Instr for UrclInstruction {
 
             UrclInstruction::Imm { rd, .. } => {
                 apply_alloc(alloc, rd);
-            }
-
-            UrclInstruction::Add { rd, rx, ry } => {
-                apply_alloc(alloc, rd);
-                apply_alloc(alloc, rx);
-                apply_alloc(alloc, ry);
             }
 
             UrclInstruction::Jmp { .. } => (),
@@ -402,65 +407,32 @@ impl Instr for UrclInstruction {
                 apply_alloc(alloc, ry);
             }
 
-            UrclInstruction::Sub { rd, rx, ry } => {
-                apply_alloc(alloc, rd);
-                apply_alloc(alloc, rx);
-                apply_alloc(alloc, ry);
-            }
-
-            UrclInstruction::Mlt { rd, rx, ry } => {
-                apply_alloc(alloc, rd);
-                apply_alloc(alloc, rx);
-                apply_alloc(alloc, ry);
-            }
-
-            UrclInstruction::Div { rd, rx, ry } => {
-                apply_alloc(alloc, rd);
-                apply_alloc(alloc, rx);
-                apply_alloc(alloc, ry);
-            }
-
-            UrclInstruction::Mod { rd, rx, ry } => {
-                apply_alloc(alloc, rd);
-                apply_alloc(alloc, rx);
-                apply_alloc(alloc, ry);
-            }
-
-            UrclInstruction::And { rd, rx, ry } => {
-                apply_alloc(alloc, rd);
-                apply_alloc(alloc, rx);
-                apply_alloc(alloc, ry);
-            }
-
-            UrclInstruction::Or { rd, rx, ry } => {
-                apply_alloc(alloc, rd);
-                apply_alloc(alloc, rx);
-                apply_alloc(alloc, ry);
-            }
-
-            UrclInstruction::Xor { rd, rx, ry } => {
-                apply_alloc(alloc, rd);
-                apply_alloc(alloc, rx);
-                apply_alloc(alloc, ry);
-            }
-
-            UrclInstruction::Bsl { rd, rx, ry } => {
-                apply_alloc(alloc, rd);
-                apply_alloc(alloc, rx);
-                apply_alloc(alloc, ry);
-            }
-
-            UrclInstruction::Bsr { rd, rx, ry } => {
-                apply_alloc(alloc, rd);
-                apply_alloc(alloc, rx);
-                apply_alloc(alloc, ry);
-            }
-
             UrclInstruction::Hlt => (),
 
             UrclInstruction::Cal { .. } => (),
 
             UrclInstruction::Ret => (),
+
+            UrclInstruction::Add { rd, rx, ry }
+            | UrclInstruction::Sete { rd, rx, ry }
+            | UrclInstruction::Setne { rd, rx, ry }
+            | UrclInstruction::Setg { rd, rx, ry }
+            | UrclInstruction::Setge { rd, rx, ry }
+            | UrclInstruction::Setl { rd, rx, ry }
+            | UrclInstruction::Setle { rd, rx, ry }
+            | UrclInstruction::Sub { rd, rx, ry }
+            | UrclInstruction::Mlt { rd, rx, ry }
+            | UrclInstruction::Div { rd, rx, ry }
+            | UrclInstruction::Mod { rd, rx, ry }
+            | UrclInstruction::And { rd, rx, ry }
+            | UrclInstruction::Or { rd, rx, ry }
+            | UrclInstruction::Xor { rd, rx, ry }
+            | UrclInstruction::Bsl { rd, rx, ry }
+            | UrclInstruction::Bsr { rd, rx, ry } => {
+                apply_alloc(alloc, rd);
+                apply_alloc(alloc, rx);
+                apply_alloc(alloc, ry);
+            }
         }
     }
 
@@ -621,6 +593,30 @@ impl Instr for UrclInstruction {
                                 UrclInstruction::Ret => {
                                     let _ = writeln!(file, "    ret");
                                 }
+
+                                UrclInstruction::Sete { rd, rx, ry } => {
+                                    let _ = writeln!(file, "    Sete {} {} {}", rd, rx, ry);
+                                }
+
+                                UrclInstruction::Setne { rd, rx, ry } => {
+                                    let _ = writeln!(file, "    setne {} {} {}", rd, rx, ry);
+                                }
+
+                                UrclInstruction::Setg { rd, rx, ry } => {
+                                    let _ = writeln!(file, "    setg {} {} {}", rd, rx, ry);
+                                }
+
+                                UrclInstruction::Setge { rd, rx, ry } => {
+                                    let _ = writeln!(file, "    setge {} {} {}", rd, rx, ry);
+                                }
+
+                                UrclInstruction::Setl { rd, rx, ry } => {
+                                    let _ = writeln!(file, "    setl {} {} {}", rd, rx, ry);
+                                }
+
+                                UrclInstruction::Setle { rd, rx, ry } => {
+                                    let _ = writeln!(file, "    setle {} {} {}", rd, rx, ry);
+                                }
                             }
                         }
                     }
@@ -759,12 +755,48 @@ impl InstructionSelector for UrclSelector {
                     }
                 }
             },
-            Operation::Eq(_, _) => todo!(),
-            Operation::Ne(_, _) => todo!(),
-            Operation::Lt(_, _) => todo!(),
-            Operation::Le(_, _) => todo!(),
-            Operation::Gt(_, _) => todo!(),
-            Operation::Ge(_, _) => todo!(),
+            Operation::Eq(a, b) => {
+                if let Some(&rx) = self.value_map.get(&a) {
+                    if let Some(&ry) = self.value_map.get(&b) {
+                        gen.push_instruction(UrclInstruction::Sete { rd, rx, ry });
+                    }
+                }
+            },
+            Operation::Ne(a, b) => {
+                if let Some(&rx) = self.value_map.get(&a) {
+                    if let Some(&ry) = self.value_map.get(&b) {
+                        gen.push_instruction(UrclInstruction::Setne { rd, rx, ry });
+                    }
+                }
+            },
+            Operation::Lt(a, b) => {
+                if let Some(&rx) = self.value_map.get(&a) {
+                    if let Some(&ry) = self.value_map.get(&b) {
+                        gen.push_instruction(UrclInstruction::Setl { rd, rx, ry });
+                    }
+                }
+            },
+            Operation::Le(a, b) => {
+                if let Some(&rx) = self.value_map.get(&a) {
+                    if let Some(&ry) = self.value_map.get(&b) {
+                        gen.push_instruction(UrclInstruction::Setle { rd, rx, ry });
+                    }
+                }
+            },
+            Operation::Gt(a, b) => {
+                if let Some(&rx) = self.value_map.get(&a) {
+                    if let Some(&ry) = self.value_map.get(&b) {
+                        gen.push_instruction(UrclInstruction::Setg { rd, rx, ry });
+                    }
+                }
+            },
+            Operation::Ge(a, b) => {
+                if let Some(&rx) = self.value_map.get(&a) {
+                    if let Some(&ry) = self.value_map.get(&b) {
+                        gen.push_instruction(UrclInstruction::Setge { rd, rx, ry });
+                    }
+                }
+            },
             Operation::BitAnd(a, b) => {
                 if let Some(&rx) = self.value_map.get(&a) {
                     if let Some(&ry) = self.value_map.get(&b) {
