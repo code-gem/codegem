@@ -394,62 +394,13 @@ impl Instr for RvInstruction {
         writeln!(file, ".global main")?;
         for func in vcode.functions.iter() {
             writeln!(file, "{}:", func.name)?;
+            for instruction in func.pre_labels.iter() {
+                write_instruction(file, vcode, func, instruction)?;
+            }
             for (i, labelled) in func.labels.iter().enumerate() {
                 writeln!(file, ".{}.L{}:", func.name, i)?;
                 for instruction in labelled.instructions.iter() {
-                    match instruction {
-                        RvInstruction::PhiPlaceholder { .. } => (),
-
-                        RvInstruction::Integer { rd, value } => {
-                            writeln!(file, "    li {}, {}", register(*rd), value)?;
-                        }
-
-                        RvInstruction::AluOp { op, rd, rx, ry } => {
-                            writeln!(file, "    {} {}, {}, {}", op, register(*rd), register(*rx), register(*ry))?;
-                        }
-
-                        RvInstruction::AluOpImm { op: RvAluOp::Sub, rd, rx, imm } => {
-                            writeln!(file, "    addi {}, {}, {}", register(*rd), register(*rx), -imm)?;
-                        }
-
-                        RvInstruction::AluOpImm { op, rd, rx, imm } => {
-                            writeln!(file, "    {} {}, {}, {}", op, register(*rd), register(*rx), imm)?;
-                        }
-
-                        RvInstruction::Jal { rd, location, .. } => {
-                            match *location {
-                                Location::InternalLabel(_) => {
-                                    writeln!(file, "    jal {}, {}", register(*rd), location)?;
-                                }
-                                Location::Function(f) => {
-                                    writeln!(file, "    jal {}, {}", register(*rd), vcode.functions[f].name)?;
-                                }
-                            }
-                        }
-
-                        RvInstruction::Bne { rx, ry, location } => {
-                            match *location {
-                                Location::InternalLabel(_) => {
-                                    writeln!(file, "    bne {}, {}, {}", register(*rx), register(*ry), location)?;
-                                }
-                                Location::Function(f) => {
-                                    writeln!(file, "    bne {}, {}, {}", register(*rx), register(*ry), vcode.functions[f].name)?;
-                                }
-                            }
-                        }
-
-                        RvInstruction::Ret => {
-                            write!(file, "    ret")?;
-                        }
-
-                        RvInstruction::Load { rd, imm, rx } => {
-                            writeln!(file, "    ld {}, {}({})", register(*rd), imm, register(*rx))?;
-                        }
-
-                        RvInstruction::Store { rx, imm, ry } => {
-                            writeln!(file, "    sd {}, {}({})", register(*rx), imm, register(*ry))?;
-                        }
-                    }
+                    write_instruction(file, vcode, func, instruction)?;
                 }
             }
 
@@ -457,6 +408,68 @@ impl Instr for RvInstruction {
         }
         Ok(())
     }
+}
+
+fn write_instruction(file: &mut impl Write, vcode: &VCode<RvInstruction>, func: &Function<RvInstruction>, instruction: &RvInstruction) -> io::Result<()> {
+    match instruction {
+        RvInstruction::PhiPlaceholder { .. } => (),
+
+        RvInstruction::Integer { rd, value } => {
+            writeln!(file, "    li {}, {}", register(*rd), value)?;
+        }
+
+        RvInstruction::AluOp { op, rd, rx, ry } => {
+            writeln!(file, "    {} {}, {}, {}", op, register(*rd), register(*rx), register(*ry))?;
+        }
+
+        RvInstruction::AluOpImm { op: RvAluOp::Sub, rd, rx, imm } => {
+            writeln!(file, "    addi {}, {}, {}", register(*rd), register(*rx), -imm)?;
+        }
+
+        RvInstruction::AluOpImm { op, rd, rx, imm } => {
+            writeln!(file, "    {} {}, {}, {}", op, register(*rd), register(*rx), imm)?;
+        }
+
+        RvInstruction::Jal { rd, location, .. } => {
+            match *location {
+                Location::InternalLabel(_) => {
+                    writeln!(file, "    jal {}, .{}{}", register(*rd), func.name, location)?;
+                }
+                Location::Function(f) => {
+                    writeln!(file, "    jal {}, {}", register(*rd), vcode.functions[f].name)?;
+                }
+            }
+        }
+
+        RvInstruction::Bne { rx, ry, location } => {
+            match *location {
+                Location::InternalLabel(_) => {
+                    writeln!(file, "    bne {}, {}, .{}{}", register(*rx), register(*ry), func.name, location)?;
+                }
+                Location::Function(f) => {
+                    writeln!(file, "    bne {}, {}, {}", register(*rx), register(*ry), vcode.functions[f].name)?;
+                }
+            }
+        }
+
+        RvInstruction::Ret => {
+            for instruction in func.pre_return.iter() {
+                write_instruction(file, vcode, func, instruction)?;
+            }
+
+            write!(file, "    ret")?;
+        }
+
+        RvInstruction::Load { rd, imm, rx } => {
+            writeln!(file, "    ld {}, {}({})", register(*rd), imm, register(*rx))?;
+        }
+
+        RvInstruction::Store { rx, imm, ry } => {
+            writeln!(file, "    sd {}, {}({})", register(*rx), imm, register(*ry))?;
+        }
+    }
+
+    Ok(())
 }
 
 fn register(reg: VReg) -> String {
@@ -512,27 +525,50 @@ impl InstructionSelector for RvSelector {
     type Instruction = RvInstruction;
 
     fn select_pre_function_instructions(&mut self, gen: &mut VCodeGenerator<Self::Instruction, Self>) {
-        gen.push_instruction(RvInstruction::AluOpImm {
+        gen.push_prelabel_instruction(RvInstruction::AluOpImm {
             op: RvAluOp::Add,
             rd: VReg::RealRegister(RV_REGISTER_SP),
             rx: VReg::RealRegister(RV_REGISTER_SP),
             imm: -16,
         });
-        gen.push_instruction(RvInstruction::Store {
+        gen.push_prelabel_instruction(RvInstruction::Store {
             rx: VReg::RealRegister(RV_REGISTER_FP),
             imm: 8,
             ry: VReg::RealRegister(RV_REGISTER_SP),
         });
-        gen.push_instruction(RvInstruction::Store {
+        gen.push_prelabel_instruction(RvInstruction::Store {
             rx: VReg::RealRegister(RV_REGISTER_RA),
             imm: 0,
             ry: VReg::RealRegister(RV_REGISTER_SP),
         });
-        gen.push_instruction(RvInstruction::AluOpImm {
+        gen.push_prelabel_instruction(RvInstruction::AluOpImm {
             op: RvAluOp::Add,
             rd: VReg::RealRegister(RV_REGISTER_FP),
             rx: VReg::RealRegister(RV_REGISTER_SP),
             imm: 0,
+        });
+
+        gen.push_prereturn_instruction(RvInstruction::AluOpImm {
+            op: RvAluOp::Add,
+            rd: VReg::RealRegister(RV_REGISTER_SP),
+            rx: VReg::RealRegister(RV_REGISTER_FP),
+            imm: 0,
+        });
+        gen.push_prereturn_instruction(RvInstruction::Load {
+            rd: VReg::RealRegister(RV_REGISTER_RA),
+            imm: 0,
+            rx: VReg::RealRegister(RV_REGISTER_FP),
+        });
+        gen.push_prereturn_instruction(RvInstruction::Load {
+            rd: VReg::RealRegister(RV_REGISTER_FP),
+            imm: 8,
+            rx: VReg::RealRegister(RV_REGISTER_FP),
+        });
+        gen.push_prereturn_instruction(RvInstruction::AluOpImm {
+            op: RvAluOp::Add,
+            rd: VReg::RealRegister(RV_REGISTER_SP),
+            rx: VReg::RealRegister(RV_REGISTER_SP),
+            imm: 16,
         });
     }
 
@@ -763,28 +799,6 @@ impl InstructionSelector for RvSelector {
             Terminator::NoTerminator => (),
 
             Terminator::ReturnVoid => {
-                gen.push_instruction(RvInstruction::AluOpImm {
-                    op: RvAluOp::Add,
-                    rd: VReg::RealRegister(RV_REGISTER_SP),
-                    rx: VReg::RealRegister(RV_REGISTER_FP),
-                    imm: 0,
-                });
-                gen.push_instruction(RvInstruction::Load {
-                    rd: VReg::RealRegister(RV_REGISTER_RA),
-                    imm: 0,
-                    rx: VReg::RealRegister(RV_REGISTER_FP),
-                });
-                gen.push_instruction(RvInstruction::Load {
-                    rd: VReg::RealRegister(RV_REGISTER_FP),
-                    imm: 8,
-                    rx: VReg::RealRegister(RV_REGISTER_FP),
-                });
-                gen.push_instruction(RvInstruction::AluOpImm {
-                    op: RvAluOp::Add,
-                    rd: VReg::RealRegister(RV_REGISTER_SP),
-                    rx: VReg::RealRegister(RV_REGISTER_SP),
-                    imm: 16,
-                });
                 gen.push_instruction(RvInstruction::Ret);
             }
 
@@ -795,29 +809,6 @@ impl InstructionSelector for RvSelector {
                     rd: VReg::RealRegister(RV_REGISTER_A0),
                     rx,
                     imm: 0,
-                });
-
-                gen.push_instruction(RvInstruction::AluOpImm {
-                    op: RvAluOp::Add,
-                    rd: VReg::RealRegister(RV_REGISTER_SP),
-                    rx: VReg::RealRegister(RV_REGISTER_FP),
-                    imm: 0,
-                });
-                gen.push_instruction(RvInstruction::Load {
-                    rd: VReg::RealRegister(RV_REGISTER_RA),
-                    imm: 0,
-                    rx: VReg::RealRegister(RV_REGISTER_FP),
-                });
-                gen.push_instruction(RvInstruction::Load {
-                    rd: VReg::RealRegister(RV_REGISTER_FP),
-                    imm: 8,
-                    rx: VReg::RealRegister(RV_REGISTER_FP),
-                });
-                gen.push_instruction(RvInstruction::AluOpImm {
-                    op: RvAluOp::Add,
-                    rd: VReg::RealRegister(RV_REGISTER_SP),
-                    rx: VReg::RealRegister(RV_REGISTER_SP),
-                    imm: 16,
                 });
                 gen.push_instruction(RvInstruction::Ret);
             }

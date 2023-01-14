@@ -203,7 +203,7 @@ impl Display for X64Instruction {
             X64Instruction::BitShift { left, dest, .. } => write!(f, "{} {}, %cl", if *left { "shl" } else { "shr" }, dest),
             X64Instruction::Mov { dest, source } => write!(f, "mov {}, {}", dest, source),
             X64Instruction::CMov { op, dest, source } => write!(f, "cmov{} {}, {}", op, dest, source),
-            X64Instruction::Cmp{ a, b } => write!(f, "cmp {}, {}", a, b),
+            X64Instruction::Cmp { a, b } => write!(f, "cmp {}, {}", a, b),
             X64Instruction::CmpZero { source } => write!(f, "cmp {}, 0", source),
             X64Instruction::Jmp { location } => write!(f, "jmp {}", location),
             X64Instruction::Jne { location } => write!(f, "bne {}", location),
@@ -466,89 +466,13 @@ impl Instr for X64Instruction {
 
         for func in vcode.functions.iter() {
             writeln!(file, "{}:", func.name)?;
+            for instruction in func.pre_labels.iter() {
+                write_instruction(file, vcode, func, instruction)?;
+            }
             for (i, labelled) in func.labels.iter().enumerate() {
                 writeln!(file, ".{}.L{}:", func.name, i)?;
                 for instruction in labelled.instructions.iter() {
-                    match instruction {
-                        X64Instruction::PhiPlaceholder { .. } => (),
-
-                        X64Instruction::Integer { dest, value } => {
-                            writeln!(file, "    mov {}, {}", register(*dest), value)?;
-                        }
-
-                        X64Instruction::AluOp { op, dest, source } => {
-                            writeln!(file, "    {} {}, {}", op, register(*dest), register(*source))?;
-                        }
-
-                        X64Instruction::DivRem { source, .. } => {
-                            writeln!(file, "    div {}", register(*source))?;
-                        }
-
-                        X64Instruction::BitShift { left, dest, .. } => {
-                            writeln!(file, "    {} {}, %cl", if *left { "shl" } else { "shr" }, register(*dest))?;
-                        }
-
-                        X64Instruction::Mov { dest, source } => {
-                            writeln!(file, "    mov {}, {}", register(*dest), register(*source))?;
-                        }
-
-                        X64Instruction::CMov { op, dest, source } => {
-                            writeln!(file, "    cmov{} {}, {}", op, register(*dest), register(*source))?;
-                        }
-
-                        X64Instruction::Cmp { a, b } => {
-                            writeln!(file, "    cmp {}, {}", register(*a), register(*b))?;
-                        }
-
-                        X64Instruction::CmpZero { source } => {
-                            writeln!(file, "    cmp {}, 0", register(*source))?;
-                        }
-
-                        X64Instruction::Jmp { location } => {
-                            match *location {
-                                Location::InternalLabel(_) => {
-                                    writeln!(file, "    jmp {}", location)?;
-                                }
-                                Location::Function(f) => {
-                                    writeln!(file, "    jmp {}", vcode.functions[f].name)?;
-                                }
-                            }
-                        }
-
-                        X64Instruction::Jne { location } => {
-                            match *location {
-                                Location::InternalLabel(_) => {
-                                    writeln!(file, "    jne {}", location)?;
-                                }
-                                Location::Function(f) => {
-                                    writeln!(file, "    jne {}", vcode.functions[f].name)?;
-                                }
-                            }
-                        }
-
-                        X64Instruction::Ret => {
-                            writeln!(file, "    ret")?;
-                        }
-
-                        X64Instruction::Push { source } => {
-                            writeln!(file, "    push {}", register(*source))?;
-                        }
-
-                        X64Instruction::Pop { dest } => {
-                            writeln!(file, "    pop {}", register(*dest))?;
-                        }
-
-                        X64Instruction::Call { location, .. } => {
-                            match *location {
-                                Location::InternalLabel(_) => {
-                                    writeln!(file, "    call {}", location)?;
-                                }
-                                Location::Function(f) => {
-                                    writeln!(file, "    call {}", vcode.functions[f].name)?;
-                                }
-                            }
-                        }
-                    }
+                    write_instruction(file, vcode, func, instruction)?;
                 }
 
                 writeln!(file)?;
@@ -557,6 +481,94 @@ impl Instr for X64Instruction {
 
         Ok(())
     }
+}
+
+fn write_instruction(file: &mut impl Write, vcode: &VCode<X64Instruction>, func: &Function<X64Instruction>, instruction: &X64Instruction) -> io::Result<()> {
+    match instruction {
+        X64Instruction::PhiPlaceholder { .. } => (),
+
+        X64Instruction::Integer { dest, value } => {
+            writeln!(file, "    mov {}, {}", register(*dest), value)?;
+        }
+
+        X64Instruction::AluOp { op, dest, source } => {
+            writeln!(file, "    {} {}, {}", op, register(*dest), register(*source))?;
+        }
+
+        X64Instruction::DivRem { source, .. } => {
+            writeln!(file, "    div {}", register(*source))?;
+        }
+
+        X64Instruction::BitShift { left, dest, .. } => {
+            writeln!(file, "    {} {}, %cl", if *left { "shl" } else { "shr" }, register(*dest))?;
+        }
+
+        X64Instruction::Mov { dest, source } => {
+            writeln!(file, "    mov {}, {}", register(*dest), register(*source))?;
+        }
+
+        X64Instruction::CMov { op, dest, source } => {
+            writeln!(file, "    cmov{} {}, {}", op, register(*dest), register(*source))?;
+        }
+
+        X64Instruction::Cmp { a, b } => {
+            writeln!(file, "    cmp {}, {}", register(*a), register(*b))?;
+        }
+
+        X64Instruction::CmpZero { source } => {
+            writeln!(file, "    cmp {}, 0", register(*source))?;
+        }
+
+        X64Instruction::Jmp { location } => {
+            match *location {
+                Location::InternalLabel(_) => {
+                    writeln!(file, "    jmp .{}{}", func.name, location)?;
+                }
+                Location::Function(f) => {
+                    writeln!(file, "    jmp {}", vcode.functions[f].name)?;
+                }
+            }
+        }
+
+        X64Instruction::Jne { location } => {
+            match *location {
+                Location::InternalLabel(_) => {
+                    writeln!(file, "    jne .{}{}", func.name, location)?;
+                }
+                Location::Function(f) => {
+                    writeln!(file, "    jne {}", vcode.functions[f].name)?;
+                }
+            }
+        }
+
+        X64Instruction::Ret => {
+            for instruction in func.pre_return.iter() {
+                write_instruction(file, vcode, func, instruction)?;
+            }
+            writeln!(file, "    ret")?;
+        }
+
+        X64Instruction::Push { source } => {
+            writeln!(file, "    push {}", register(*source))?;
+        }
+
+        X64Instruction::Pop { dest } => {
+            writeln!(file, "    pop {}", register(*dest))?;
+        }
+
+        X64Instruction::Call { location, .. } => {
+            match *location {
+                Location::InternalLabel(_) => {
+                    writeln!(file, "    call .{}{}", func.name, location)?;
+                }
+                Location::Function(f) => {
+                    writeln!(file, "    call {}", vcode.functions[f].name)?;
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 // TODO: add width stuff
@@ -595,12 +607,54 @@ impl InstructionSelector for X64Selector {
     type Instruction = X64Instruction;
 
     fn select_pre_function_instructions(&mut self, gen: &mut VCodeGenerator<Self::Instruction, Self>) {
-        gen.push_instruction(X64Instruction::Push {
+        gen.push_prelabel_instruction(X64Instruction::Push {
             source: VReg::RealRegister(X64_REGISTER_RBP),
         });
-        gen.push_instruction(X64Instruction::Mov {
+        gen.push_prelabel_instruction(X64Instruction::Mov {
             dest: VReg::RealRegister(X64_REGISTER_RBP),
             source: VReg::RealRegister(X64_REGISTER_RSP),
+        });
+
+        // TODO: autodetect these
+        gen.push_prelabel_instruction(X64Instruction::Push {
+            source: VReg::RealRegister(X64_REGISTER_RBX),
+        });
+        gen.push_prelabel_instruction(X64Instruction::Push {
+            source: VReg::RealRegister(X64_REGISTER_R12),
+        });
+        gen.push_prelabel_instruction(X64Instruction::Push {
+            source: VReg::RealRegister(X64_REGISTER_R13),
+        });
+        gen.push_prelabel_instruction(X64Instruction::Push {
+            source: VReg::RealRegister(X64_REGISTER_R14),
+        });
+        gen.push_prelabel_instruction(X64Instruction::Push {
+            source: VReg::RealRegister(X64_REGISTER_R15),
+        });
+
+        // TODO: autodetect these
+        gen.push_prereturn_instruction(X64Instruction::Pop {
+            dest: VReg::RealRegister(X64_REGISTER_R15),
+        });
+        gen.push_prereturn_instruction(X64Instruction::Pop {
+            dest: VReg::RealRegister(X64_REGISTER_R14),
+        });
+        gen.push_prereturn_instruction(X64Instruction::Pop {
+            dest: VReg::RealRegister(X64_REGISTER_R13),
+        });
+        gen.push_prereturn_instruction(X64Instruction::Pop {
+            dest: VReg::RealRegister(X64_REGISTER_R12),
+        });
+        gen.push_prereturn_instruction(X64Instruction::Pop {
+            dest: VReg::RealRegister(X64_REGISTER_RBX),
+        });
+
+        gen.push_prereturn_instruction(X64Instruction::Mov {
+            dest: VReg::RealRegister(X64_REGISTER_RSP),
+            source: VReg::RealRegister(X64_REGISTER_RBP),
+        });
+        gen.push_prereturn_instruction(X64Instruction::Pop {
+            dest: VReg::RealRegister(X64_REGISTER_RBP),
         });
     }
 
@@ -774,7 +828,20 @@ impl InstructionSelector for X64Selector {
 
             Operation::Call(f, args) => {
                 if let Some(&f) = gen.func_map().get(&f) {
-                    let clobbers: Vec<_> = args.into_iter().map(|v| {
+                    // TODO: better way to do this
+                    for source in X64Instruction::get_arg_regs().into_iter() {
+                        gen.push_instruction(X64Instruction::Push {
+                            source,
+                        });
+                    }
+                    gen.push_instruction(X64Instruction::Push {
+                        source: VReg::RealRegister(X64_REGISTER_R10),
+                    });
+                    gen.push_instruction(X64Instruction::Push {
+                        source: VReg::RealRegister(X64_REGISTER_R11),
+                    });
+
+                    let mut clobbers: Vec<_> = args.into_iter().map(|v| {
                         let clobber = gen.new_unassociated_vreg();
 
                         let source = gen.get_vreg(v);
@@ -785,10 +852,38 @@ impl InstructionSelector for X64Selector {
 
                         clobber
                     }).collect();
+
+                    if dest.is_some() {
+                        clobbers.push(VReg::RealRegister(X64_REGISTER_RAX));
+                    } else {
+                        gen.push_instruction(X64Instruction::Push {
+                            source: VReg::RealRegister(X64_REGISTER_RAX),
+                        });
+                    }
+
                     gen.push_instruction(X64Instruction::Call {
                         location: Location::Function(f),
-                        clobbers,
+                        clobbers: clobbers.clone(),
                     });
+
+                    if dest.is_none() {
+                        gen.push_instruction(X64Instruction::Pop {
+                            dest: VReg::RealRegister(X64_REGISTER_RAX),
+                        });
+                    }
+
+                    // TODO: better way to do this
+                    gen.push_instruction(X64Instruction::Pop {
+                        dest: VReg::RealRegister(X64_REGISTER_R11),
+                    });
+                    gen.push_instruction(X64Instruction::Pop {
+                        dest: VReg::RealRegister(X64_REGISTER_R10),
+                    });
+                    for dest in X64Instruction::get_arg_regs().into_iter().rev() {
+                        gen.push_instruction(X64Instruction::Pop {
+                            dest,
+                        });
+                    }
 
                     if let Some(dest) = dest {
                         gen.push_instruction(X64Instruction::Mov {
@@ -808,13 +903,6 @@ impl InstructionSelector for X64Selector {
             Terminator::NoTerminator => (),
 
             Terminator::ReturnVoid => {
-                gen.push_instruction(X64Instruction::Mov {
-                    dest: VReg::RealRegister(X64_REGISTER_RSP),
-                    source: VReg::RealRegister(X64_REGISTER_RBP),
-                });
-                gen.push_instruction(X64Instruction::Pop {
-                    dest: VReg::RealRegister(X64_REGISTER_RBP),
-                });
                 gen.push_instruction(X64Instruction::Ret);
             }
 
@@ -823,14 +911,6 @@ impl InstructionSelector for X64Selector {
                 gen.push_instruction(X64Instruction::Mov {
                     dest: VReg::RealRegister(X64_REGISTER_RAX),
                     source,
-                });
-
-                gen.push_instruction(X64Instruction::Mov {
-                    dest: VReg::RealRegister(X64_REGISTER_RSP),
-                    source: VReg::RealRegister(X64_REGISTER_RBP),
-                });
-                gen.push_instruction(X64Instruction::Pop {
-                    dest: VReg::RealRegister(X64_REGISTER_RBP),
                 });
                 gen.push_instruction(X64Instruction::Ret);
             }

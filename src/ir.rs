@@ -643,7 +643,7 @@ impl ModuleBuilder {
 
                     1 => {
                         let prev = block.predecessors.iter().next().unwrap().1;
-                        for var in func.arg_types.len()..func.variables.len() {
+                        for var in 0..func.variables.len() {
                             let var = VariableId(var);
                             if let Some(&val) = var_map.get(&(var, prev)) {
                                 var_map.insert((var, i), val);
@@ -652,7 +652,7 @@ impl ModuleBuilder {
                     }
 
                     _ => {
-                        for var in func.arg_types.len()..func.variables.len() {
+                        for var in 0..func.variables.len() {
                             let var = VariableId(var);
                             let operation = Operation::Phi(Vec::new());
                             let val = Value(func.value_index);
@@ -679,7 +679,7 @@ impl ModuleBuilder {
                                 }
 
                                 None => {
-                                    panic!("malformed ir");
+                                    panic!("malformed ir {}", var);
                                 }
                             }
                         }

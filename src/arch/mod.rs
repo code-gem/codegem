@@ -78,6 +78,8 @@ where
 {
     pub name: String,
     pub arg_count: usize,
+    pub pre_labels: Vec<I>,
+    pub pre_return: Vec<I>,
     pub labels: Vec<LabelledInstructions<I>>,
 }
 
@@ -249,7 +251,6 @@ where
         reg
     }
 
-
     /// Returns the map from IR [`FunctionId`]s to indexes into the [`VCode`]'s list of functions.
     pub fn func_map(&self) -> &HashMap<FunctionId, usize> {
         &self.func_map
@@ -266,6 +267,8 @@ where
         self.internal.functions.push(Function {
             name: name.to_owned(),
             arg_count,
+            pre_labels: Vec::new(),
+            pre_return: Vec::new(),
             labels: Vec::new(),
         });
         self.func_map.insert(id, f);
@@ -288,6 +291,24 @@ where
                 instructions: Vec::new(),
             });
             self.label_map.insert(id, label);
+        }
+    }
+
+    pub fn push_prelabel_instruction(&mut self, instruction: I) {
+        if let Some(func) = self
+            .current_function
+            .and_then(|v| self.internal.functions.get_mut(v))
+        {
+            func.pre_labels.push(instruction);
+        }
+    }
+
+    pub fn push_prereturn_instruction(&mut self, instruction: I) {
+        if let Some(func) = self
+            .current_function
+            .and_then(|v| self.internal.functions.get_mut(v))
+        {
+            func.pre_return.push(instruction);
         }
     }
 
