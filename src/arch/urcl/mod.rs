@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, fs::File, io::Write};
+use std::{collections::HashMap, fmt::Display, io::{Write, self}};
 
 use crate::{
     ir::{Operation, Terminator, Type, Value},
@@ -440,194 +440,189 @@ impl Instr for UrclInstruction {
         // TODO
     }
 
-    fn emit_assembly(vcode: &VCode<Self>) {
-        match File::create(format!("{}.urcl", vcode.name)) {
-            Ok(mut file) => {
-                let _ = writeln!(file, "minreg 8");
-                let _ = writeln!(file, "bits 64");
-                for func in vcode.functions.iter() {
-                    let _ = writeln!(file, ".{}", func.name);
-                    for (i, labelled) in func.labels.iter().enumerate() {
-                        let _ = writeln!(file, ".L{}", i);
-                        for instruction in labelled.instructions.iter() {
-                            match instruction {
-                                UrclInstruction::PhiPlaceholder { .. } => (),
+    fn emit_assembly(file: &mut impl Write, vcode: &VCode<Self>) -> io::Result<()> {
+        let _ = writeln!(file, "minreg 8");
+        let _ = writeln!(file, "bits 64");
+        for func in vcode.functions.iter() {
+            let _ = writeln!(file, ".{}", func.name);
+            for (i, labelled) in func.labels.iter().enumerate() {
+                let _ = writeln!(file, ".L{}", i);
+                for instruction in labelled.instructions.iter() {
+                    match instruction {
+                        UrclInstruction::PhiPlaceholder { .. } => (),
 
-                                UrclInstruction::Imm { rd, value } => {
-                                    let _ = writeln!(file, "    imm {} {}", register(*rd), value);
+                        UrclInstruction::Imm { rd, value } => {
+                            let _ = writeln!(file, "    imm {} {}", register(*rd), value);
+                        }
+
+                        UrclInstruction::Add { rd, rx, ry } => {
+                            let _ = writeln!(file, "    add {} {} {}", register(*rd), register(*rx), register(*ry));
+                        }
+
+                        UrclInstruction::Jmp { location } => {
+                            match *location {
+                                Location::InternalLabel(_) => {
+                                    let _ = writeln!(file, "    jmp {}", location);
                                 }
-
-                                UrclInstruction::Add { rd, rx, ry } => {
-                                    let _ = writeln!(file, "    add {} {} {}", register(*rd), register(*rx), register(*ry));
-                                }
-
-                                UrclInstruction::Jmp { location } => {
-                                    match *location {
-                                        Location::InternalLabel(_) => {
-                                            let _ = writeln!(file, "    jmp {}", location);
-                                        }
-                                        Location::Function(f) => {
-                                            let _ = writeln!(file, "    jmp {}", vcode.functions[f].name);
-                                        }
-                                    }
-                                }
-
-                                UrclInstruction::Bne { rx, ry, location } => {
-                                    match *location {
-                                        Location::InternalLabel(_) => {
-                                            let _ = writeln!(file, "    bne {} {} {}", location, register(*rx), register(*ry) );
-                                        }
-                                        Location::Function(f) => {
-                                            let _ = writeln!(file, "    bne {} {} {}", vcode.functions[f].name, register(*rx), register(*ry) );
-                                        }
-                                    }
-                                }
-
-                                UrclInstruction::Lod { rd,  rx } => {
-                                    let _ = writeln!(file, "    lod {} {}", rd, rx);
-                                }
-
-                                UrclInstruction::Str { rd, rx} => {
-                                    let _ = writeln!(file, "    str {} {}", rd, rx);
-                                }
-
-                                UrclInstruction::Brl { rx, ry, location } => {
-                                    match *location {
-                                        Location::InternalLabel(_) => {
-                                            let _ = writeln!(file, "    brl {} {} {}", location, register(*rx), register(*ry) );
-                                        }
-                                        Location::Function(f) => {
-                                            let _ = writeln!(file, "    brl {} {} {}", vcode.functions[f].name, register(*rx), register(*ry) );
-                                        }
-                                    }
-                                }
-
-                                UrclInstruction::Ble { rx, ry, location } => {
-                                    match *location {
-                                        Location::InternalLabel(_) => {
-                                            let _ = writeln!(file, "    ble {} {} {}", location, register(*rx), register(*ry) );
-                                        }
-                                        Location::Function(f) => {
-                                            let _ = writeln!(file, "    ble {} {} {}", vcode.functions[f].name, register(*rx), register(*ry) );
-                                        }
-                                    }
-                                }
-
-                                UrclInstruction::Brg { rx, ry, location } => {
-                                    match *location {
-                                        Location::InternalLabel(_) => {
-                                            let _ = writeln!(file, "    brg {} {} {}", location, register(*rx), register(*ry) );
-                                        }
-                                        Location::Function(f) => {
-                                            let _ = writeln!(file, "    brg {} {} {}", vcode.functions[f].name, register(*rx), register(*ry) );
-                                        }
-                                    }
-                                }
-
-                                UrclInstruction::Bge { rx, ry, location } => {
-                                    match *location {
-                                        Location::InternalLabel(_) => {
-                                            let _ = writeln!(file, "    bge {} {} {}", location, register(*rx), register(*ry) );
-                                        }
-                                        Location::Function(f) => {
-                                            let _ = writeln!(file, "    bge {} {} {}", vcode.functions[f].name, register(*rx), register(*ry) );
-                                        }
-                                    }
-                                }
-
-                                UrclInstruction::Bre { rx, ry, location } => {
-                                    match *location {
-                                        Location::InternalLabel(_) => {
-                                            let _ = writeln!(file, "    bre {} {} {}", location, register(*rx), register(*ry) );
-                                        }
-                                        Location::Function(f) => {
-                                            let _ = writeln!(file, "    bre {} {} {}", vcode.functions[f].name, register(*rx), register(*ry) );
-                                        }
-                                    }
-                                }
-
-                                UrclInstruction::Sub { rd, rx, ry } => {
-                                    let _ = writeln!(file, "    sub {} {} {}", register(*rd), register(*rx), register(*ry));
-                                }
-
-                                UrclInstruction::Mlt { rd, rx, ry } => {
-                                    let _ = writeln!(file, "    mlt {} {} {}", register(*rd), register(*rx), register(*ry));
-                                }
-
-                                UrclInstruction::Div { rd, rx, ry } => {
-                                    let _ = writeln!(file, "    div {} {} {}", register(*rd), register(*rx), register(*ry));
-                                }
-
-                                UrclInstruction::Mod { rd, rx, ry } => {
-                                    let _ = writeln!(file, "    mod {} {} {}", register(*rd), register(*rx), register(*ry));
-                                }
-
-                                UrclInstruction::And { rd, rx, ry } => {
-                                    let _ = writeln!(file, "    and {} {} {}", register(*rd), register(*rx), register(*ry));
-                                }
-
-                                UrclInstruction::Or { rd, rx, ry } => {
-                                    let _ = writeln!(file, "    or {} {} {}", register(*rd), register(*rx), register(*ry));
-                                }
-
-                                UrclInstruction::Xor { rd, rx, ry } => {
-                                    let _ = writeln!(file, "    xor {} {} {}", register(*rd), register(*rx), register(*ry));
-                                }
-
-                                UrclInstruction::Bsr { rd, rx, ry } => {
-                                    let _ = writeln!(file, "    bsr {} {} {}", register(*rd), register(*rx), register(*ry));
-                                }
-
-                                UrclInstruction::Bsl { rd, rx, ry } => {
-                                    let _ = writeln!(file, "    bsl {} {} {}", register(*rd), register(*rx), register(*ry));
-                                }
-
-                                UrclInstruction::Hlt => {
-                                    let _ = writeln!(file, "    hlt");
-                                }
-
-                                UrclInstruction::Cal { location } => {
-                                    let _ = writeln!(file, "    cal {}", location);
-                                }
-
-                                UrclInstruction::Ret => {
-                                    let _ = writeln!(file, "    ret");
-                                }
-
-                                UrclInstruction::Sete { rd, rx, ry } => {
-                                    let _ = writeln!(file, "    Sete {} {} {}", rd, rx, ry);
-                                }
-
-                                UrclInstruction::Setne { rd, rx, ry } => {
-                                    let _ = writeln!(file, "    setne {} {} {}", rd, rx, ry);
-                                }
-
-                                UrclInstruction::Setg { rd, rx, ry } => {
-                                    let _ = writeln!(file, "    setg {} {} {}", rd, rx, ry);
-                                }
-
-                                UrclInstruction::Setge { rd, rx, ry } => {
-                                    let _ = writeln!(file, "    setge {} {} {}", rd, rx, ry);
-                                }
-
-                                UrclInstruction::Setl { rd, rx, ry } => {
-                                    let _ = writeln!(file, "    setl {} {} {}", rd, rx, ry);
-                                }
-
-                                UrclInstruction::Setle { rd, rx, ry } => {
-                                    let _ = writeln!(file, "    setle {} {} {}", rd, rx, ry);
+                                Location::Function(f) => {
+                                    let _ = writeln!(file, "    jmp {}", vcode.functions[f].name);
                                 }
                             }
                         }
-                    }
 
-                    let _ = writeln!(file);
+                        UrclInstruction::Bne { rx, ry, location } => {
+                            match *location {
+                                Location::InternalLabel(_) => {
+                                    let _ = writeln!(file, "    bne {} {} {}", location, register(*rx), register(*ry) );
+                                }
+                                Location::Function(f) => {
+                                    let _ = writeln!(file, "    bne {} {} {}", vcode.functions[f].name, register(*rx), register(*ry) );
+                                }
+                            }
+                        }
+
+                        UrclInstruction::Lod { rd,  rx } => {
+                            let _ = writeln!(file, "    lod {} {}", rd, rx);
+                        }
+
+                        UrclInstruction::Str { rd, rx} => {
+                            let _ = writeln!(file, "    str {} {}", rd, rx);
+                        }
+
+                        UrclInstruction::Brl { rx, ry, location } => {
+                            match *location {
+                                Location::InternalLabel(_) => {
+                                    let _ = writeln!(file, "    brl {} {} {}", location, register(*rx), register(*ry) );
+                                }
+                                Location::Function(f) => {
+                                    let _ = writeln!(file, "    brl {} {} {}", vcode.functions[f].name, register(*rx), register(*ry) );
+                                }
+                            }
+                        }
+
+                        UrclInstruction::Ble { rx, ry, location } => {
+                            match *location {
+                                Location::InternalLabel(_) => {
+                                    let _ = writeln!(file, "    ble {} {} {}", location, register(*rx), register(*ry) );
+                                }
+                                Location::Function(f) => {
+                                    let _ = writeln!(file, "    ble {} {} {}", vcode.functions[f].name, register(*rx), register(*ry) );
+                                }
+                            }
+                        }
+
+                        UrclInstruction::Brg { rx, ry, location } => {
+                            match *location {
+                                Location::InternalLabel(_) => {
+                                    let _ = writeln!(file, "    brg {} {} {}", location, register(*rx), register(*ry) );
+                                }
+                                Location::Function(f) => {
+                                    let _ = writeln!(file, "    brg {} {} {}", vcode.functions[f].name, register(*rx), register(*ry) );
+                                }
+                            }
+                        }
+
+                        UrclInstruction::Bge { rx, ry, location } => {
+                            match *location {
+                                Location::InternalLabel(_) => {
+                                    let _ = writeln!(file, "    bge {} {} {}", location, register(*rx), register(*ry) );
+                                }
+                                Location::Function(f) => {
+                                    let _ = writeln!(file, "    bge {} {} {}", vcode.functions[f].name, register(*rx), register(*ry) );
+                                }
+                            }
+                        }
+
+                        UrclInstruction::Bre { rx, ry, location } => {
+                            match *location {
+                                Location::InternalLabel(_) => {
+                                    let _ = writeln!(file, "    bre {} {} {}", location, register(*rx), register(*ry) );
+                                }
+                                Location::Function(f) => {
+                                    let _ = writeln!(file, "    bre {} {} {}", vcode.functions[f].name, register(*rx), register(*ry) );
+                                }
+                            }
+                        }
+
+                        UrclInstruction::Sub { rd, rx, ry } => {
+                            let _ = writeln!(file, "    sub {} {} {}", register(*rd), register(*rx), register(*ry));
+                        }
+
+                        UrclInstruction::Mlt { rd, rx, ry } => {
+                            let _ = writeln!(file, "    mlt {} {} {}", register(*rd), register(*rx), register(*ry));
+                        }
+
+                        UrclInstruction::Div { rd, rx, ry } => {
+                            let _ = writeln!(file, "    div {} {} {}", register(*rd), register(*rx), register(*ry));
+                        }
+
+                        UrclInstruction::Mod { rd, rx, ry } => {
+                            let _ = writeln!(file, "    mod {} {} {}", register(*rd), register(*rx), register(*ry));
+                        }
+
+                        UrclInstruction::And { rd, rx, ry } => {
+                            let _ = writeln!(file, "    and {} {} {}", register(*rd), register(*rx), register(*ry));
+                        }
+
+                        UrclInstruction::Or { rd, rx, ry } => {
+                            let _ = writeln!(file, "    or {} {} {}", register(*rd), register(*rx), register(*ry));
+                        }
+
+                        UrclInstruction::Xor { rd, rx, ry } => {
+                            let _ = writeln!(file, "    xor {} {} {}", register(*rd), register(*rx), register(*ry));
+                        }
+
+                        UrclInstruction::Bsr { rd, rx, ry } => {
+                            let _ = writeln!(file, "    bsr {} {} {}", register(*rd), register(*rx), register(*ry));
+                        }
+
+                        UrclInstruction::Bsl { rd, rx, ry } => {
+                            let _ = writeln!(file, "    bsl {} {} {}", register(*rd), register(*rx), register(*ry));
+                        }
+
+                        UrclInstruction::Hlt => {
+                            let _ = writeln!(file, "    hlt");
+                        }
+
+                        UrclInstruction::Cal { location } => {
+                            let _ = writeln!(file, "    cal {}", location);
+                        }
+
+                        UrclInstruction::Ret => {
+                            let _ = writeln!(file, "    ret");
+                        }
+
+                        UrclInstruction::Sete { rd, rx, ry } => {
+                            let _ = writeln!(file, "    Sete {} {} {}", rd, rx, ry);
+                        }
+
+                        UrclInstruction::Setne { rd, rx, ry } => {
+                            let _ = writeln!(file, "    setne {} {} {}", rd, rx, ry);
+                        }
+
+                        UrclInstruction::Setg { rd, rx, ry } => {
+                            let _ = writeln!(file, "    setg {} {} {}", rd, rx, ry);
+                        }
+
+                        UrclInstruction::Setge { rd, rx, ry } => {
+                            let _ = writeln!(file, "    setge {} {} {}", rd, rx, ry);
+                        }
+
+                        UrclInstruction::Setl { rd, rx, ry } => {
+                            let _ = writeln!(file, "    setl {} {} {}", rd, rx, ry);
+                        }
+
+                        UrclInstruction::Setle { rd, rx, ry } => {
+                            let _ = writeln!(file, "    setle {} {} {}", rd, rx, ry);
+                        }
+                    }
                 }
             }
-            Err(e) => {
-                eprintln!("Could not open file `{}`: {}", vcode.name, e);
-            }
+
+            let _ = writeln!(file);
         }
+
+        Ok(())
     }
 }
 

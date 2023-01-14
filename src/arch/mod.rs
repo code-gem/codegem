@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, marker::PhantomData};
+use std::{collections::HashMap, fmt::Display, marker::PhantomData, io::{Write, self}};
 
 use super::{
     ir::{BasicBlockId, FunctionId, Operation, Terminator, Type, Value},
@@ -145,7 +145,7 @@ pub trait Instr: Sized {
     fn mandatory_transforms(vcode: &mut VCode<Self>);
 
     /// Transforms the given [`VCode`] into assembly written to a file.
-    fn emit_assembly(vcode: &VCode<Self>);
+    fn emit_assembly(file: &mut impl Write, vcode: &VCode<Self>) -> io::Result<()>;
 
     /// Collects the registers in an instruction for register allocation.
     fn collect_registers<A>(&self, alloc: &mut A)
@@ -357,7 +357,7 @@ where
 
     /// Emits assembly for the [`VCode`]. Register allocation via [`VCode::allocate_regs`] must
     /// have been done beforehand, as well as any optional transforms.
-    pub fn emit_assembly(&self) {
-        I::emit_assembly(self);
+    pub fn emit_assembly(&self, file: &mut impl Write) -> io::Result<()> {
+        I::emit_assembly(file, self)
     }
 }
