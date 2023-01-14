@@ -1,5 +1,7 @@
 use std::{collections::HashMap, fmt::Display, marker::PhantomData, io::{Write, self}};
 
+use crate::ir::Linkage;
+
 use super::{
     ir::{BasicBlockId, FunctionId, Operation, Terminator, Type, Value},
     regalloc::RegisterAllocator,
@@ -77,6 +79,7 @@ where
     I: Instr,
 {
     pub name: String,
+    pub linkage: Linkage,
     pub arg_count: usize,
     pub pre_labels: Vec<I>,
     pub pre_return: Vec<I>,
@@ -262,10 +265,11 @@ where
         &self.label_map
     }
 
-    pub(crate) fn add_function(&mut self, name: &str, id: FunctionId, arg_count: usize) {
+    pub(crate) fn add_function(&mut self, name: &str, linkage: Linkage, id: FunctionId, arg_count: usize) {
         let f = self.internal.functions.len();
         self.internal.functions.push(Function {
             name: name.to_owned(),
+            linkage,
             arg_count,
             pre_labels: Vec::new(),
             pre_return: Vec::new(),

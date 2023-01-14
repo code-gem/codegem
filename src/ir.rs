@@ -33,7 +33,7 @@ impl Module {
         let mut selector = S::default();
 
         for (i, function) in self.functions.iter().enumerate() {
-            gen.add_function(&function.name, FunctionId(i), function.arg_types.len());
+            gen.add_function(&function.name, function.linkage, FunctionId(i), function.arg_types.len());
         }
 
         for (f, func) in self.functions.into_iter().enumerate() {
@@ -101,8 +101,32 @@ impl Display for Type {
     }
 }
 
+#[derive(Copy, Clone)]
+/// [`Linkage`] is the linkage for a given [`Function`].
+pub enum Linkage {
+    /// An external linkage indicates that the function is written elsewhere.
+    External,
+
+    /// A private function is internal to the module and not exposed to outside modules.
+    Private,
+
+    /// A public function is internal to the module but exposed to outside modules.
+    Public,
+}
+
+impl Display for Linkage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Linkage::External => write!(f, "external"),
+            Linkage::Private => write!(f, "private"),
+            Linkage::Public => write!(f, "public"),
+        }
+    }
+}
+
 struct Function {
     name: String,
+    linkage: Linkage,
     arg_types: Vec<Type>,
     ret_type: Type,
     variables: Vec<Variable>,
@@ -112,7 +136,7 @@ struct Function {
 
 impl Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "function {} @{}(", self.ret_type, self.name)?;
+        write!(f, "function {} {} @{}(", self.linkage, self.ret_type, self.name)?;
         let mut first = true;
         for (i, arg_type) in self.arg_types.iter().enumerate() {
             if first {
@@ -731,12 +755,14 @@ impl ModuleBuilder {
     pub fn new_function(
         &mut self,
         name: &str,
+        linkage: Linkage,
         args: &[(&str, Type)],
         ret_type: &Type,
     ) -> FunctionId {
         let id = self.internal.functions.len();
         self.internal.functions.push(Function {
             name: name.to_owned(),
+            linkage,
             arg_types: args.iter().map(|(_, t)| t.clone()).collect(),
             ret_type: ret_type.clone(),
             variables: args

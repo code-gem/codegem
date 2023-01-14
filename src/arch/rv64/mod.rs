@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Display, io::{Write, self}};
 
 use crate::{
-    ir::{Operation, Terminator, Type, Value},
+    ir::{Operation, Terminator, Type, Value, Linkage},
     regalloc::RegisterAllocator,
 };
 
@@ -391,8 +391,20 @@ impl Instr for RvInstruction {
     }
 
     fn emit_assembly(file: &mut impl Write, vcode: &VCode<Self>) -> io::Result<()> {
-        writeln!(file, ".global main")?;
         for func in vcode.functions.iter() {
+            match func.linkage {
+                Linkage::External => {
+                    writeln!(file, ".extern {}", func.name)?;
+                    continue;
+                }
+
+                Linkage::Private => (),
+
+                Linkage::Public => {
+                    writeln!(file, ".global {}", func.name)?;
+                }
+            }
+
             writeln!(file, "{}:", func.name)?;
             for instruction in func.pre_labels.iter() {
                 write_instruction(file, vcode, func, instruction)?;
