@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Display, io::{Write, self}};
 
 use crate::{
     ir::{Operation, Terminator, Type, Value},
-    regalloc::RegisterAllocator,
+    regalloc::{RegisterAllocator, RegAllocMapping},
 };
 
 use super::{Instr, InstructionSelector, Location, VCode, VCodeGenerator, VReg, Function};
@@ -357,7 +357,7 @@ impl Instr for UrclInstruction {
 
 
 
-    fn apply_reg_allocs(&mut self, alloc: &HashMap<VReg, VReg>) {
+    fn apply_reg_allocs(&mut self, alloc: &HashMap<VReg, RegAllocMapping>) {
         match self {
             UrclInstruction::PhiPlaceholder { .. } => (),
 
@@ -436,7 +436,11 @@ impl Instr for UrclInstruction {
         }
     }
 
-    fn mandatory_transforms(_vcode: &mut VCode<Self>) {
+    fn pre_regalloc_apply_transforms(_func: &mut Function<Self>, _alloc: &HashMap<VReg, RegAllocMapping>) {
+        // TODO
+    }
+
+    fn post_regalloc_transforms(_vcode: &mut VCode<Self>) {
         // TODO
     }
 
@@ -626,9 +630,9 @@ impl Instr for UrclInstruction {
     }
 }
 
-fn apply_alloc(alloc: &HashMap<VReg, VReg>, reg: &mut VReg) {
+fn apply_alloc(alloc: &HashMap<VReg, RegAllocMapping>, reg: &mut VReg) {
     if let Some(new) = alloc.get(reg) {
-        *reg = *new;
+        *reg = new.colour;
     }
 }
 

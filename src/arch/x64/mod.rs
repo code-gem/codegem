@@ -54,7 +54,7 @@ use std::{collections::HashMap, fmt::Display, io::{Write, self}};
 
 use crate::{
     ir::{Operation, Terminator, Type, Value},
-    regalloc::RegisterAllocator,
+    regalloc::{RegisterAllocator, RegAllocMapping},
 };
 
 use super::{Instr, InstructionSelector, Location, VCode, VCodeGenerator, VReg, Function};
@@ -318,76 +318,115 @@ impl Instr for X64Instruction {
         }
     }
 
-    fn apply_reg_allocs(&mut self, alloc: &HashMap<VReg, VReg>) {
+    fn pre_regalloc_apply_transforms(func: &mut Function<Self>, alloc: &HashMap<VReg, RegAllocMapping>) {
+        let mut offset = 0;
+        for labelled in func.labels.iter_mut() {
+            let mut calls = Vec::new();
+            let len = labelled.instructions.len();
+            for (i, instruction) in labelled.instructions.iter().enumerate() {
+                if let X64Instruction::Call { .. } = instruction {
+                    let lifetime = offset + i;
+                    let mut to_save = Vec::new();
+                    for (_, mapping) in alloc.iter() {
+                        if mapping.lifetime.start <= lifetime && lifetime <= mapping.lifetime.end {
+                            if let VReg::RealRegister(v) = mapping.colour {
+                                if X64Instruction::get_arg_regs().contains(&mapping.colour) || [X64_REGISTER_R10, X64_REGISTER_R11].contains(&v) {
+                                    to_save.push(mapping.colour);
+                                }
+                            }
+                        }
+                    }
+                    calls.push((i, to_save));
+                }
+            }
+
+            for (i, to_save) in calls.into_iter().rev() {
+                for dest in to_save.iter().cloned() {
+                    labelled.instructions.insert(i + 1, X64Instruction::Pop {
+                        dest,
+                    });
+                }
+                for source in to_save.iter().rev().cloned() {
+                    labelled.instructions.insert(i, X64Instruction::Push {
+                        source,
+                    });
+                }
+            }
+
+            offset += len;
+        }
+    }
+
+    fn apply_reg_allocs(&mut self, alloc: &HashMap<VReg, RegAllocMapping>) {
         match self {
             X64Instruction::PhiPlaceholder { .. } => (),
 
             X64Instruction::Integer { dest, .. } => {
                 if let Some(new) = alloc.get(dest) {
-                    *dest = *new;
+                    *dest = new.colour;
                 }
             }
 
             X64Instruction::AluOp { dest, source, .. } => {
                 if let Some(new) = alloc.get(dest) {
-                    *dest = *new;
+                    *dest = new.colour;
                 }
                 if let Some(new) = alloc.get(source) {
-                    *source = *new;
+                    *source = new.colour;
                 }
             }
 
             X64Instruction::DivRem { rem, div, source } => {
                 if let Some(new) = alloc.get(rem) {
-                    *rem = *new;
+                    *rem = new.colour;
                 }
                 if let Some(new) = alloc.get(div) {
-                    *div = *new;
+                    *div = new.colour;
                 }
                 if let Some(new) = alloc.get(source) {
-                    *source = *new;
+                    *source = new.colour;
                 }
             }
 
             X64Instruction::BitShift { dest, source, .. } => {
                 if let Some(new) = alloc.get(dest) {
-                    *dest = *new;
+                    *dest = new.colour;
                 }
                 if let Some(new) = alloc.get(source) {
-                    *source = *new;
+                    *source = new.colour;
                 }
             }
 
             X64Instruction::Mov { dest, source } => {
                 if let Some(new) = alloc.get(dest) {
-                    *dest = *new;
+                    *dest = new.colour;
                 }
                 if let Some(new) = alloc.get(source) {
-                    *source = *new;
+                    *source = new.colour;
                 }
             }
 
             X64Instruction::Cmp { a, b } => {
                 if let Some(new) = alloc.get(a) {
-                    *a = *new;
+                    *a = new.colour;
                 }
                 if let Some(new) = alloc.get(b) {
-                    *b = *new;
+                    *b = new.colour;
                 }
             }
 
             X64Instruction::CMov { dest, source, .. } => {
                 if let Some(new) = alloc.get(dest) {
-                    *dest = *new;
+                    *dest = new.colour;
                 }
                 if let Some(new) = alloc.get(source) {
-                    *source = *new;
+                    *source = new.colour;
                 }
             }
 
             X64Instruction::CmpZero { source } => {
                 if let Some(new) = alloc.get(source) {
-                    *source = *new;
+                    *source = new.colour;
                 }
             }
 
@@ -405,7 +444,7 @@ impl Instr for X64Instruction {
         }
     }
 
-    fn mandatory_transforms(vcode: &mut VCode<Self>) {
+    fn post_regalloc_transforms(vcode: &mut VCode<Self>) {
         for func in vcode.functions.iter_mut() {
             for labelled in func.labels.iter_mut() {
                 let mut swaps = Vec::new();
@@ -828,19 +867,6 @@ impl InstructionSelector for X64Selector {
 
             Operation::Call(f, args) => {
                 if let Some(&f) = gen.func_map().get(&f) {
-                    // TODO: better way to do this
-                    for source in X64Instruction::get_arg_regs().into_iter() {
-                        gen.push_instruction(X64Instruction::Push {
-                            source,
-                        });
-                    }
-                    gen.push_instruction(X64Instruction::Push {
-                        source: VReg::RealRegister(X64_REGISTER_R10),
-                    });
-                    gen.push_instruction(X64Instruction::Push {
-                        source: VReg::RealRegister(X64_REGISTER_R11),
-                    });
-
                     let mut clobbers: Vec<_> = args.into_iter().map(|v| {
                         let clobber = gen.new_unassociated_vreg();
 
@@ -865,25 +891,6 @@ impl InstructionSelector for X64Selector {
                         location: Location::Function(f),
                         clobbers: clobbers.clone(),
                     });
-
-                    if dest.is_none() {
-                        gen.push_instruction(X64Instruction::Pop {
-                            dest: VReg::RealRegister(X64_REGISTER_RAX),
-                        });
-                    }
-
-                    // TODO: better way to do this
-                    gen.push_instruction(X64Instruction::Pop {
-                        dest: VReg::RealRegister(X64_REGISTER_R11),
-                    });
-                    gen.push_instruction(X64Instruction::Pop {
-                        dest: VReg::RealRegister(X64_REGISTER_R10),
-                    });
-                    for dest in X64Instruction::get_arg_regs().into_iter().rev() {
-                        gen.push_instruction(X64Instruction::Pop {
-                            dest,
-                        });
-                    }
 
                     if let Some(dest) = dest {
                         gen.push_instruction(X64Instruction::Mov {

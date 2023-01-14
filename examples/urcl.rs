@@ -1,11 +1,8 @@
+use std::fs::File;
+
 use codegem::ir::*;
 use codegem::arch::urcl::UrclSelector;
-use codegem::arch::x64::X64Selector;
-use codegem::arch::rv64::RvSelector;
 use codegem::regalloc::RegAlloc;
-
-
-
 
 fn main() {
     let mut builder = ModuleBuilder::default().with_name("test");
@@ -26,6 +23,5 @@ fn main() {
     let module = builder.build();
     let mut vcode = module.lower_to_vcode::<_, UrclSelector>();
     vcode.allocate_regs::<RegAlloc>();
-    vcode.emit_assembly();
-    
+    vcode.emit_assembly(&mut File::create("test.urcl").unwrap()).unwrap();
 }

@@ -2,6 +2,11 @@ use std::{collections::{HashMap, HashSet}, ops::Range};
 
 use super::arch::{Instr, VReg};
 
+pub struct RegAllocMapping {
+    pub lifetime: Range<usize>,
+    pub colour: VReg,
+}
+
 /// [`RegisterAllocator`] is the trait register allocators implement. Implementations of this trait
 /// can be used wherever a register allocator is needed.
 pub trait RegisterAllocator: Default {
@@ -23,7 +28,7 @@ pub trait RegisterAllocator: Default {
     fn next_live_step(&mut self);
 
     /// Performs register allocation for the given [`Instr`].
-    fn allocate_regs<I>(self) -> HashMap<VReg, VReg>
+    fn allocate_regs<I>(self) -> HashMap<VReg, RegAllocMapping>
     where
         I: Instr;
 }
@@ -104,7 +109,7 @@ impl RegisterAllocator for RegAlloc {
         self.live_step_count += 1;
     }
 
-    fn allocate_regs<I>(mut self) -> HashMap<VReg, VReg>
+    fn allocate_regs<I>(mut self) -> HashMap<VReg, RegAllocMapping>
     where
         I: Instr,
     {
@@ -213,7 +218,10 @@ impl RegisterAllocator for RegAlloc {
         let mut map = HashMap::new();
         for node in self.nodes {
             if let Some(colour) = node.colour {
-                map.insert(node.reg, colour);
+                map.insert(node.reg, RegAllocMapping {
+                    lifetime: node.live_range,
+                    colour,
+                });
             }
         }
 

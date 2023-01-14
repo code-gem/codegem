@@ -1,5 +1,7 @@
 use std::{collections::HashMap, fmt::Display, marker::PhantomData, io::{Write, self}};
 
+use crate::regalloc::RegAllocMapping;
+
 use super::{
     ir::{BasicBlockId, FunctionId, Operation, Terminator, Type, Value},
     regalloc::RegisterAllocator,
@@ -143,9 +145,6 @@ pub trait Instr: Sized {
     /// Gets the registers that can be used as function arguments.
     fn get_arg_regs() -> Vec<VReg>;
 
-    /// Performs transformations on the [`VCode`] that are mandatory after register allocation.
-    fn mandatory_transforms(vcode: &mut VCode<Self>);
-
     /// Transforms the given [`VCode`] into assembly written to a file.
     fn emit_assembly(file: &mut impl Write, vcode: &VCode<Self>) -> io::Result<()>;
 
@@ -154,8 +153,15 @@ pub trait Instr: Sized {
     where
         A: RegisterAllocator;
 
+    /// Performs transformations on the [`VCode`] that occur before register allocation
+    /// applications.
+    fn pre_regalloc_apply_transforms(func: &mut Function<Self>, alloc: &HashMap<VReg, RegAllocMapping>);
+
     /// Applies the results of register allocation.
-    fn apply_reg_allocs(&mut self, alloc: &HashMap<VReg, VReg>);
+    fn apply_reg_allocs(&mut self, alloc: &HashMap<VReg, RegAllocMapping>);
+
+    /// Performs transformations on the [`VCode`] that occur after register allocation.
+    fn post_regalloc_transforms(vcode: &mut VCode<Self>);
 }
 
 /// [`InstructionSelector`] is the other trait that has to be implemented for a backend. This trait
@@ -366,6 +372,7 @@ where
             }
 
             let allocations = allocator.allocate_regs::<I>();
+            I::pre_regalloc_apply_transforms(func, &allocations);
             for labelled in func.labels.iter_mut() {
                 for instr in labelled.instructions.iter_mut() {
                     instr.apply_reg_allocs(&allocations);
@@ -373,7 +380,7 @@ where
             }
         }
 
-        I::mandatory_transforms(self);
+        I::post_regalloc_transforms(self);
     }
 
     /// Emits assembly for the [`VCode`]. Register allocation via [`VCode::allocate_regs`] must

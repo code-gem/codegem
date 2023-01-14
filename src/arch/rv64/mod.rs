@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Display, io::{Write, self}};
 
 use crate::{
     ir::{Operation, Terminator, Type, Value},
-    regalloc::RegisterAllocator,
+    regalloc::{RegisterAllocator, RegAllocMapping},
 };
 
 use super::{Instr, InstructionSelector, Location, VCode, VCodeGenerator, VReg, Function};
@@ -235,49 +235,53 @@ impl Instr for RvInstruction {
         }
     }
 
-    fn apply_reg_allocs(&mut self, alloc: &HashMap<VReg, VReg>) {
+    fn pre_regalloc_apply_transforms(_func: &mut Function<Self>, _alloc: &HashMap<VReg, RegAllocMapping>) {
+        // TODO
+    }
+
+    fn apply_reg_allocs(&mut self, alloc: &HashMap<VReg, RegAllocMapping>) {
         match self {
             RvInstruction::PhiPlaceholder { .. } => (),
 
             RvInstruction::Integer { rd, .. } => {
                 if let Some(new) = alloc.get(rd) {
-                    *rd = *new;
+                    *rd = new.colour;
                 }
             }
 
             RvInstruction::AluOp { rd, rx, ry, .. } => {
                 if let Some(new) = alloc.get(rd) {
-                    *rd = *new;
+                    *rd = new.colour;
                 }
                 if let Some(new) = alloc.get(rx) {
-                    *rx = *new;
+                    *rx = new.colour;
                 }
                 if let Some(new) = alloc.get(ry) {
-                    *ry = *new;
+                    *ry = new.colour;
                 }
             }
 
             RvInstruction::AluOpImm { rd, rx, .. } => {
                 if let Some(new) = alloc.get(rd) {
-                    *rd = *new;
+                    *rd = new.colour;
                 }
                 if let Some(new) = alloc.get(rx) {
-                    *rx = *new;
+                    *rx = new.colour;
                 }
             }
 
             RvInstruction::Jal { rd, .. } => {
                 if let Some(new) = alloc.get(rd) {
-                    *rd = *new;
+                    *rd = new.colour;
                 }
             }
 
             RvInstruction::Bne { rx, ry, .. } => {
                 if let Some(new) = alloc.get(rx) {
-                    *rx = *new;
+                    *rx = new.colour;
                 }
                 if let Some(new) = alloc.get(ry) {
-                    *ry = *new;
+                    *ry = new.colour;
                 }
             }
 
@@ -289,7 +293,7 @@ impl Instr for RvInstruction {
         }
     }
 
-    fn mandatory_transforms(vcode: &mut VCode<Self>) {
+    fn post_regalloc_transforms(vcode: &mut VCode<Self>) {
         for func in vcode.functions.iter_mut() {
             for labelled in func.labels.iter_mut() {
                 let mut swaps = Vec::new();
