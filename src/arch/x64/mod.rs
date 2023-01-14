@@ -829,17 +829,14 @@ impl InstructionSelector for X64Selector {
             Operation::Call(f, args) => {
                 if let Some(&f) = gen.func_map().get(&f) {
                     // TODO: better way to do this
+                    let mut save_regs = X64Instruction::get_arg_regs();
+                    save_regs.push(VReg::RealRegister(X64_REGISTER_R10));
+                    save_regs.push(VReg::RealRegister(X64_REGISTER_R11));
                     for source in X64Instruction::get_arg_regs().into_iter() {
                         gen.push_instruction(X64Instruction::Push {
                             source,
                         });
                     }
-                    gen.push_instruction(X64Instruction::Push {
-                        source: VReg::RealRegister(X64_REGISTER_R10),
-                    });
-                    gen.push_instruction(X64Instruction::Push {
-                        source: VReg::RealRegister(X64_REGISTER_R11),
-                    });
 
                     let mut clobbers: Vec<_> = args.into_iter().map(|v| {
                         let clobber = gen.new_unassociated_vreg();
@@ -873,16 +870,13 @@ impl InstructionSelector for X64Selector {
                     }
 
                     // TODO: better way to do this
-                    gen.push_instruction(X64Instruction::Pop {
-                        dest: VReg::RealRegister(X64_REGISTER_R11),
-                    });
-                    gen.push_instruction(X64Instruction::Pop {
-                        dest: VReg::RealRegister(X64_REGISTER_R10),
-                    });
+                    let dest_ = dest;
                     for dest in X64Instruction::get_arg_regs().into_iter().rev() {
-                        gen.push_instruction(X64Instruction::Pop {
-                            dest,
-                        });
+                        if !matches!(dest_, Some(v) if v == dest) {
+                            gen.push_instruction(X64Instruction::Pop {
+                                dest,
+                            });
+                        }
                     }
 
                     if let Some(dest) = dest {

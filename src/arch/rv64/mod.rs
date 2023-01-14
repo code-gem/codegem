@@ -548,6 +548,35 @@ impl InstructionSelector for RvSelector {
             imm: 0,
         });
 
+        // TODO: autodetect these
+        let callee_saved_regs = [RV_REGISTER_S1, RV_REGISTER_S2, RV_REGISTER_S3, RV_REGISTER_S4, RV_REGISTER_S5, RV_REGISTER_S6, RV_REGISTER_S7, RV_REGISTER_S8, RV_REGISTER_S9, RV_REGISTER_S10, RV_REGISTER_S11];
+        gen.push_prelabel_instruction(RvInstruction::AluOpImm {
+            op: RvAluOp::Add,
+            rd: VReg::RealRegister(RV_REGISTER_SP),
+            rx: VReg::RealRegister(RV_REGISTER_SP),
+            imm: -(callee_saved_regs.len() as i16 * 8),
+        });
+        for (i, &reg) in callee_saved_regs.iter().enumerate() {
+            gen.push_prelabel_instruction(RvInstruction::Store {
+                rx: VReg::RealRegister(reg),
+                imm: (i as i16) * 8,
+                ry: VReg::RealRegister(RV_REGISTER_SP),
+            });
+        }
+        for (i, &reg) in callee_saved_regs.iter().enumerate() {
+            gen.push_prereturn_instruction(RvInstruction::Load {
+                rd: VReg::RealRegister(reg),
+                imm: (i as i16) * 8,
+                rx: VReg::RealRegister(RV_REGISTER_SP),
+            });
+        }
+        gen.push_prereturn_instruction(RvInstruction::AluOpImm {
+            op: RvAluOp::Add,
+            rd: VReg::RealRegister(RV_REGISTER_SP),
+            rx: VReg::RealRegister(RV_REGISTER_SP),
+            imm: callee_saved_regs.len() as i16 * 8,
+        });
+
         gen.push_prereturn_instruction(RvInstruction::AluOpImm {
             op: RvAluOp::Add,
             rd: VReg::RealRegister(RV_REGISTER_SP),
@@ -762,6 +791,29 @@ impl InstructionSelector for RvSelector {
 
             Operation::Call(f, args) => {
                 if let Some(&f) = gen.func_map().get(&f) {
+                    // TODO: better way to do this
+                    let mut save_regs = RvInstruction::get_arg_regs();
+                    save_regs.push(VReg::RealRegister(RV_REGISTER_T0));
+                    save_regs.push(VReg::RealRegister(RV_REGISTER_T1));
+                    save_regs.push(VReg::RealRegister(RV_REGISTER_T2));
+                    save_regs.push(VReg::RealRegister(RV_REGISTER_T3));
+                    save_regs.push(VReg::RealRegister(RV_REGISTER_T4));
+                    save_regs.push(VReg::RealRegister(RV_REGISTER_T5));
+                    save_regs.push(VReg::RealRegister(RV_REGISTER_T6));
+                    gen.push_instruction(RvInstruction::AluOpImm {
+                        op: RvAluOp::Add,
+                        rd: VReg::RealRegister(RV_REGISTER_SP),
+                        rx: VReg::RealRegister(RV_REGISTER_SP),
+                        imm: -(save_regs.len() as i16 * 8),
+                    });
+                    for (i, &rx) in save_regs.iter().enumerate() {
+                        gen.push_instruction(RvInstruction::Store {
+                            rx,
+                            imm: i as i16 * 8,
+                            ry: VReg::RealRegister(RV_REGISTER_SP),
+                        });
+                    }
+
                     let clobbers: Vec<_> = args.into_iter().map(|v| {
                         let clobber = gen.new_unassociated_vreg();
 
@@ -786,6 +838,25 @@ impl InstructionSelector for RvSelector {
                         rd,
                         rx: VReg::RealRegister(RV_REGISTER_A0),
                         ry: VReg::RealRegister(RV_REGISTER_ZERO),
+                    });
+
+                    // TODO: better way of doing this
+                    let rd_ = rd;
+                    for (i, &rd) in save_regs.iter().enumerate() {
+                        if rd == rd_ {
+                            continue;
+                        }
+                        gen.push_instruction(RvInstruction::Load {
+                            rd,
+                            imm: i as i16 * 8,
+                            rx: VReg::RealRegister(RV_REGISTER_SP),
+                        });
+                    }
+                    gen.push_instruction(RvInstruction::AluOpImm {
+                        op: RvAluOp::Add,
+                        rd: VReg::RealRegister(RV_REGISTER_SP),
+                        rx: VReg::RealRegister(RV_REGISTER_SP),
+                        imm: (save_regs.len() as i16 * 8),
                     });
                 }
             }
