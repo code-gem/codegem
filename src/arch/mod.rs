@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display, marker::PhantomData, io::{Write, s
 use crate::ir::Linkage;
 
 use super::{
-    ir::{BasicBlockId, FunctionId, Operation, Terminator, Type, Value},
+    ir::{BasicBlockId, FunctionId, Operation, Terminator, Value},
     regalloc::RegisterAllocator,
 };
 

@@ -1,7 +1,5 @@
 use codegem::ir::*;
 use codegem::arch::urcl::UrclSelector;
-use codegem::arch::x64::X64Selector;
-use codegem::arch::rv64::RvSelector;
 use codegem::regalloc::RegAlloc;
 
 

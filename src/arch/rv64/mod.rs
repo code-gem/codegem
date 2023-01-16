@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Display, io::{Write, self}};
 
 use crate::{
-    ir::{Operation, Terminator, Type, Value, Linkage},
+    ir::{Operation, Terminator, Value, Linkage},
     regalloc::RegisterAllocator,
 };
 
