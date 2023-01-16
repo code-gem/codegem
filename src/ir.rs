@@ -1,6 +1,6 @@
 #![warn(missing_docs)]
 
-use std::{fmt::Display, collections::{HashSet, HashMap}};
+use std::{fmt::{Display, Debug}, collections::{HashSet, HashMap}};
 
 use super::arch::{Instr, InstructionSelector, VCode, VCodeGenerator};
 
@@ -57,7 +57,7 @@ impl Module {
                 }
 
                 for instr in block.instructions {
-                    selector.select_instr(&mut gen, instr.yielded, instr.type_, instr.operation);
+                    selector.select_instr(&mut gen, instr.yielded, instr.operation);
                 }
                 selector.select_term(&mut gen, block.terminator);
             }
@@ -120,6 +120,16 @@ impl Display for Linkage {
             Linkage::External => write!(f, "external"),
             Linkage::Private => write!(f, "private"),
             Linkage::Public => write!(f, "public"),
+        }
+    }
+}
+
+impl Debug for Linkage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::External => write!(f, "external"),
+            Self::Private => write!(f, "private"),
+            Self::Public => write!(f, "public"),
         }
     }
 }
@@ -219,7 +229,7 @@ impl Display for BasicBlockId {
 
 struct Instruction {
     yielded: Option<Value>,
-    type_: Type,
+    //type_: Type,
     operation: Operation,
 }
 
@@ -229,7 +239,7 @@ impl Display for Instruction {
             write!(f, "{} = ", yielded)?;
         }
 
-        write!(f, "{} {}", self.type_, self.operation)
+        write!(f, "{}", self.operation)
     }
 }
 
@@ -683,7 +693,6 @@ impl ModuleBuilder {
                             func.value_index += 1;
                             let phi = Instruction {
                                 yielded: Some(val),
-                                type_: func.variables[var.0].type_.clone(),
                                 operation,
                             };
                             block.instructions.insert(0, phi);
@@ -854,12 +863,11 @@ impl ModuleBuilder {
     /// # use codegem::ir::*;
     /// # fn testy(builder: &mut ModuleBuilder) -> Option<()> {
     /// builder.push_instruction(
-    ///     &Type::Integer(true, 32),
     ///     69i32.to_integer_operation()
     /// );
     /// # None
     /// # }
-    pub fn push_instruction(&mut self, type_: &Type, instr: Operation) -> Option<Value> {
+    pub fn push_instruction(&mut self, instr: Operation) -> Option<Value> {
         if let Some(func_id) = self.current_function {
             if let Some(block_id) = self.current_block {
                 let yielded = match &instr {
@@ -884,13 +892,12 @@ impl ModuleBuilder {
                 };
                 block.instructions.push(Instruction {
                     yielded,
-                    type_: type_.clone(),
                     operation: instr,
                 });
-                if let Type::Void = type_ {
-                    return None;
-                } else {
+                if let Some(_) = yielded {
                     return yielded;
+                } else {
+                    return None;
                 }
             }
         }
