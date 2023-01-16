@@ -555,12 +555,11 @@ impl Display for Value {
 /// # use codegem::ir::*;
 /// let mut builder = ModuleBuilder::default()
 ///     .with_name("uwu");
-/// let main = builder.new_function("main", &[], &Type::Void);
+/// let main = builder.new_function("main", Linkage::Public, &[], &Type::Void);
 /// builder.switch_to_function(main);
 /// let entry = builder.push_block()?;
 /// builder.switch_to_block(entry);
 /// let val = builder.push_instruction(
-///     &Type::Integer(true, 32),
 ///     69u32.to_integer_operation()
 /// )?;
 /// builder.set_terminator(Terminator::Return(val));
@@ -758,7 +757,7 @@ impl ModuleBuilder {
     /// ```rust
     /// # use codegem::ir::*;
     /// # fn testy(builder: &mut ModuleBuilder) {
-    /// let main_func = builder.new_function("main", &[], &Type::Void);
+    /// let main_func = builder.new_function("main", Linkage::Public, &[], &Type::Void);
     /// # }
     /// ```
     pub fn new_function(
@@ -793,7 +792,7 @@ impl ModuleBuilder {
     /// ```rust
     /// # use codegem::ir::*;
     /// # fn testy(builder: &mut ModuleBuilder) {
-    /// let main_func = builder.new_function("main", &[], &Type::Void);
+    /// let main_func = builder.new_function("main", Linkage::Public, &[], &Type::Void);
     /// builder.switch_to_function(main_func);
     /// # }
     /// ```
