@@ -171,7 +171,6 @@ pub trait InstructionSelector: Default {
         &mut self,
         gen: &mut VCodeGenerator<Self::Instruction, Self>,
         result: Option<Value>,
-        type_: Type,
         op: Operation,
     );
 

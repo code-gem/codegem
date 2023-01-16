@@ -608,7 +608,6 @@ impl InstructionSelector for X64Selector {
         &mut self,
         gen: &mut VCodeGenerator<Self::Instruction, Self>,
         result: Option<Value>,
-        _type_: Type,
         op: Operation,
     ) {
         let dest = result.map(|v| gen.get_vreg(v));

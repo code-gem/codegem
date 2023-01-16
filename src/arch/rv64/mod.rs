@@ -540,7 +540,6 @@ impl InstructionSelector for RvSelector {
         &mut self,
         gen: &mut VCodeGenerator<Self::Instruction, Self>,
         result: Option<Value>,
-        _type_: Type,
         op: Operation,
     ) {
         let rd = match result {
