@@ -256,67 +256,67 @@ pub trait ToIntegerOperation {
 
 impl ToIntegerOperation for bool {
     fn to_integer_operation(self) -> Operation {
-        Operation::Integer(false, if self { vec![1] } else { vec![0] })
+        Operation::Integer(Type::Integer(false, 1), if self { vec![1] } else { vec![0] })
     }
 }
 
 impl ToIntegerOperation for i8 {
     fn to_integer_operation(self) -> Operation {
-        Operation::Integer(true, self.to_le_bytes().to_vec())
+        Operation::Integer(Type::Integer(true, 8), self.to_le_bytes().to_vec())
     }
 }
 
 impl ToIntegerOperation for u8 {
     fn to_integer_operation(self) -> Operation {
-        Operation::Integer(true, self.to_le_bytes().to_vec())
+        Operation::Integer(Type::Integer(false, 8), self.to_le_bytes().to_vec())
     }
 }
 
 impl ToIntegerOperation for i16 {
     fn to_integer_operation(self) -> Operation {
-        Operation::Integer(true, self.to_le_bytes().to_vec())
+        Operation::Integer(Type::Integer(true, 16), self.to_le_bytes().to_vec())
     }
 }
 
 impl ToIntegerOperation for u16 {
     fn to_integer_operation(self) -> Operation {
-        Operation::Integer(true, self.to_le_bytes().to_vec())
+        Operation::Integer(Type::Integer(false, 16), self.to_le_bytes().to_vec())
     }
 }
 
 impl ToIntegerOperation for i32 {
     fn to_integer_operation(self) -> Operation {
-        Operation::Integer(true, self.to_le_bytes().to_vec())
+        Operation::Integer(Type::Integer(true, 32), self.to_le_bytes().to_vec())
     }
 }
 
 impl ToIntegerOperation for u32 {
     fn to_integer_operation(self) -> Operation {
-        Operation::Integer(true, self.to_le_bytes().to_vec())
+        Operation::Integer(Type::Integer(false, 32), self.to_le_bytes().to_vec())
     }
 }
 
 impl ToIntegerOperation for i64 {
     fn to_integer_operation(self) -> Operation {
-        Operation::Integer(true, self.to_le_bytes().to_vec())
+        Operation::Integer(Type::Integer(true, 64), self.to_le_bytes().to_vec())
     }
 }
 
 impl ToIntegerOperation for u64 {
     fn to_integer_operation(self) -> Operation {
-        Operation::Integer(true, self.to_le_bytes().to_vec())
+        Operation::Integer(Type::Integer(false, 64), self.to_le_bytes().to_vec())
     }
 }
 
 impl ToIntegerOperation for i128 {
     fn to_integer_operation(self) -> Operation {
-        Operation::Integer(true, self.to_le_bytes().to_vec())
+        Operation::Integer(Type::Integer(true, 128), self.to_le_bytes().to_vec())
     }
 }
 
 impl ToIntegerOperation for u128 {
     fn to_integer_operation(self) -> Operation {
-        Operation::Integer(true, self.to_le_bytes().to_vec())
+        Operation::Integer(Type::Integer(false, 128), self.to_le_bytes().to_vec())
     }
 }
 
@@ -326,9 +326,9 @@ pub enum Operation {
     /// passed in value. This is used internally.
     Identity(Value),
 
-    /// Creates an integer from the little endian bytes passed in and sign extending it if the
-    /// first parameter is true.
-    Integer(bool, Vec<u8>),
+    /// Creates an integer from the little endian bytes passed in with the given type. It is
+    /// recommended to use the [`ToIntegerOperation`] trait to create this operation.
+    Integer(Type, Vec<u8>),
 
     /// Performs an addition on the two values.
     Add(Value, Value),
@@ -426,12 +426,8 @@ impl Display for Operation {
         match self {
             Operation::Identity(val) => write!(f, "id {}", val),
 
-            Operation::Integer(signed, val) => {
-                if *signed {
-                    write!(f, "iconst ")?;
-                } else {
-                    write!(f, "uconst ")?;
-                }
+            Operation::Integer(type_, val) => {
+                write!(f, "iconst {} ", type_)?;
 
                 if val.is_empty() {
                     write!(f, "0")
