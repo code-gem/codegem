@@ -254,6 +254,12 @@ pub trait ToIntegerOperation {
     fn to_integer_operation(self) -> Operation;
 }
 
+impl ToIntegerOperation for bool {
+    fn to_integer_operation(self) -> Operation {
+        Operation::Integer(false, if self { vec![1] } else { vec![0] })
+    }
+}
+
 impl ToIntegerOperation for i8 {
     fn to_integer_operation(self) -> Operation {
         Operation::Integer(true, self.to_le_bytes().to_vec())
