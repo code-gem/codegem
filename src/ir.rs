@@ -1,6 +1,6 @@
 #![warn(missing_docs)]
 
-use std::{fmt::Display, collections::{HashSet, HashMap}};
+use std::{fmt::{Display, Debug}, collections::{HashSet, HashMap}};
 
 use super::arch::{Instr, InstructionSelector, VCode, VCodeGenerator};
 
@@ -101,7 +101,7 @@ impl Display for Type {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Copy, Clone)]
 /// [`Linkage`] is the linkage for a given [`Function`].
 pub enum Linkage {
     /// An external linkage indicates that the function is written elsewhere.
@@ -120,6 +120,16 @@ impl Display for Linkage {
             Linkage::External => write!(f, "external"),
             Linkage::Private => write!(f, "private"),
             Linkage::Public => write!(f, "public"),
+        }
+    }
+}
+
+impl Debug for Linkage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::External => write!(f, "external"),
+            Self::Private => write!(f, "private"),
+            Self::Public => write!(f, "public"),
         }
     }
 }
