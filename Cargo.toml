@@ -1,6 +1,6 @@
 [package]
 name = "codegem"
-version = "0.1.5"
+version = "0.2.1"
 edition = "2021"
 description = "A small code generation library"
 license = "MPL-2.0"

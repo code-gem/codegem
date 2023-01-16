@@ -1,0 +1,11 @@
+# Things to do:
+ - Implement arguments that are on the stack for functions
+ - Pointers
+ - Type checking
+ - Static data
+ - Structs
+ - Unions
+ - Optimisation
+ - Extensive tests
+ - Documentation
+ - More backends
