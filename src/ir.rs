@@ -101,7 +101,7 @@ impl Display for Type {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 /// [`Linkage`] is the linkage for a given [`Function`].
 pub enum Linkage {
     /// An external linkage indicates that the function is written elsewhere.

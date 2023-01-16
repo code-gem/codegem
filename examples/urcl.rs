@@ -9,7 +9,7 @@ use codegem::regalloc::RegAlloc;
 
 fn main() {
     let mut builder = ModuleBuilder::default().with_name("test");
-    let main_func = builder.new_function("main", &[], &Type::Void);
+    let main_func = builder.new_function("main",  Linkage::Public, &[], &Type::Void);
     builder.switch_to_function(main_func);
     let entry = builder.push_block().unwrap();
     builder.switch_to_block(entry);
