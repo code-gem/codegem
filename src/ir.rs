@@ -756,7 +756,7 @@ impl ModuleBuilder {
         &mut self,
         name: &str,
         linkage: Linkage,
-        args: &[(&str, Type)],
+        args: &[(String, Type)],
         ret_type: &Type,
     ) -> FunctionId {
         let id = self.internal.functions.len();
@@ -768,7 +768,7 @@ impl ModuleBuilder {
             variables: args
                 .iter()
                 .map(|(n, t)| Variable {
-                    name: (*n).to_owned(),
+                    name: n.clone(),
                     type_: t.clone(),
                 })
                 .collect(),
