@@ -12,7 +12,7 @@ fn main() -> Result<(), ModuleCreationError> {
     let val2 = builder.push_instruction(69u32.to_integer_operation())?.unwrap();
     let val3 = builder.push_instruction(Operation::Add(val, val2))?.unwrap();
     builder.set_terminator(Terminator::Return(val3))?;
-    let module = builder.build();
+    let module = builder.build()?;
     let mut vcode = module.lower_to_vcode::<_, UrclSelector>();
     vcode.allocate_regs::<RegAlloc>();
     vcode.emit_assembly(&mut std::fs::File::create("out.s").unwrap()).unwrap();

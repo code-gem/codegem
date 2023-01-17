@@ -255,12 +255,31 @@ impl Display for Instruction {
 /// [`ToIntegerOperation`] converts the given value into an integer operation.
 pub trait ToIntegerOperation {
     /// Converts an integer into an integer operation.
+    ///
     /// # Example
     /// ```rust
     /// # use codegem::ir::*;
     /// let op = 69i32.to_integer_operation();
     /// ```
     fn to_integer_operation(self) -> Operation;
+
+    /// Converts an integer into an integer operation with the given type.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use codegem::ir::*;
+    /// let op = 69i32.to_integer_operation_as(Type::Integer(true, 64));
+    /// ```
+    fn to_integer_operation_as(self, type_: Type) -> Operation
+        where Self: Sized
+    {
+        let mut op = self.to_integer_operation();
+        match &mut op {
+            Operation::Integer(t, _) if matches!(type_, Type::Integer(_, _)) => *t = type_,
+            _ => (),
+        }
+        op
+    }
 }
 
 impl ToIntegerOperation for bool {
@@ -330,7 +349,7 @@ impl ToIntegerOperation for u128 {
 }
 
 /// [`Operation`] is an operation that can be performed by the IR.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Operation {
     /// Does nothing to the given value, returning a new value that has the same contents as the
     /// passed in value. This is used internally.
@@ -539,7 +558,7 @@ impl Display for Operation {
 
 /// [`Terminator`] terminates a given basic block. For information on basic blocks, see
 /// [`ModuleBuilder::push_block`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Terminator {
     /// No terminator has been added to the block yet. Note that compiling blocks with this as its
     /// terminator results in undefined behaviour.
@@ -627,12 +646,14 @@ impl ModuleBuilder {
     /// # Example
     /// ```rust
     /// # use codegem::ir::*;
+    /// # fn main() -> Result<(), ModuleCreationError> {
     /// let empty_module = ModuleBuilder::default()
-    ///     .build();
+    ///     .build()?;
+    /// # Ok(())
+    /// # }
     /// ```
-    // TODO: return Result<Module, MalformedIrError> on malformed IR instead of panicking.
-    pub fn build(mut self) -> Module {
-        for (_, func) in self.internal.functions.iter_mut().enumerate() {
+    pub fn build(mut self) -> Result<Module, ModuleCreationError> {
+        for (func_id, func) in self.internal.functions.iter_mut().enumerate() {
             let mut blocks_prec = vec![HashSet::new(); func.blocks.len()];
             for (i, block) in func.blocks.iter().enumerate() {
                 match &block.terminator {
@@ -688,7 +709,13 @@ impl ModuleBuilder {
 
                 if let Terminator::Branch(_, a, b) = block.terminator {
                     if func.blocks[a.0].predecessors.len() > 1 || func.blocks[b.0].predecessors.len() > 1 {
-                        panic!("malformed ir");
+                        return Err(ModuleCreationError {
+                            func: Some(FunctionId(func_id)),
+                            block: None,
+                            instr: None,
+                            term: None,
+                            error: ModuleCreationErrorType::IncorrectGraph(a, b),
+                        })
                     }
                 }
             }
@@ -744,7 +771,13 @@ impl ModuleBuilder {
                                 }
 
                                 None => {
-                                    panic!("malformed ir {}", var);
+                                    return Err(ModuleCreationError {
+                                        func: Some(FunctionId(func_id)),
+                                        block: Some(BasicBlockId(i)),
+                                        instr: None,
+                                        term: None,
+                                        error: ModuleCreationErrorType::GottenBeforeSet(var),
+                                    });
                                 }
                             }
                         }
@@ -780,7 +813,7 @@ impl ModuleBuilder {
             }
         }
 
-        self.internal
+        Ok(self.internal)
     }
 
     /// Adds a new function to the module being built. Returns a [`FunctionId`], which can be used
@@ -869,6 +902,7 @@ impl ModuleBuilder {
                         func: Some(FunctionId(f)),
                         block: None,
                         instr: None,
+                        term: None,
                         error: ModuleCreationErrorType::UnknownFunction(FunctionId(f)),
                     })
                 }
@@ -878,6 +912,7 @@ impl ModuleBuilder {
                         func: None,
                         block: None,
                         instr: None,
+                        term: None,
                         error: ModuleCreationErrorType::NotInFunc,
                     })
                 }
@@ -1027,6 +1062,7 @@ impl ModuleBuilder {
                     func: self.get_function(),
                     block: self.get_block(),
                     instr: Some(instr),
+                    term: None,
                     error,
                 });
             }
@@ -1054,6 +1090,7 @@ impl ModuleBuilder {
                             func: Some(FunctionId(f)),
                             block: Some(BasicBlockId(b)),
                             instr: Some(instr),
+                            term: None,
                             error: ModuleCreationErrorType::UnknownBasicBlock(BasicBlockId(b)),
                         })
                     }
@@ -1063,6 +1100,7 @@ impl ModuleBuilder {
                             func: self.current_function.map(FunctionId),
                             block: None,
                             instr: Some(instr),
+                            term: None,
                             error: ModuleCreationErrorType::NotInBlock,
                         })
                     }
@@ -1075,6 +1113,7 @@ impl ModuleBuilder {
                         func: Some(FunctionId(f)),
                         block: None,
                         instr: Some(instr),
+                        term: None,
                         error: ModuleCreationErrorType::UnknownFunction(FunctionId(f)),
                     })
                 }
@@ -1084,6 +1123,7 @@ impl ModuleBuilder {
                         func: None,
                         block: None,
                         instr: Some(instr),
+                        term: None,
                         error: ModuleCreationErrorType::NotInFunc,
                     })
                 }
@@ -1102,6 +1142,54 @@ impl ModuleBuilder {
     /// # }
     pub fn set_terminator(&mut self, terminator: Terminator) -> Result<(), ModuleCreationError> {
         if let Some(func) = self.current_function.and_then(|v| self.internal.functions.get_mut(v)) {
+            match terminator {
+                Terminator::NoTerminator => (),
+                Terminator::ReturnVoid => (),
+                Terminator::Return(v) => {
+                    func.value_types.get(v.0).ok_or_else(|| ModuleCreationError {
+                        func: self.current_function.map(FunctionId),
+                        block: self.current_block.map(BasicBlockId),
+                        instr: None,
+                        term: Some(terminator.clone()),
+                        error: ModuleCreationErrorType::UnknownValue(v),
+                    })?;
+                }
+
+                Terminator::Jump(b) => {
+                    func.blocks.get(b.0).ok_or_else(|| ModuleCreationError {
+                        func: self.current_function.map(FunctionId),
+                        block: self.current_block.map(BasicBlockId),
+                        instr: None,
+                        term: Some(terminator.clone()),
+                        error: ModuleCreationErrorType::UnknownBasicBlock(b),
+                    })?;
+                }
+
+                Terminator::Branch(v, t, f) => {
+                    func.value_types.get(v.0).ok_or_else(|| ModuleCreationError {
+                        func: self.current_function.map(FunctionId),
+                        block: self.current_block.map(BasicBlockId),
+                        instr: None,
+                        term: Some(terminator.clone()),
+                        error: ModuleCreationErrorType::UnknownValue(v),
+                    })?;
+                    func.blocks.get(t.0).ok_or_else(|| ModuleCreationError {
+                        func: self.current_function.map(FunctionId),
+                        block: self.current_block.map(BasicBlockId),
+                        instr: None,
+                        term: Some(terminator.clone()),
+                        error: ModuleCreationErrorType::UnknownBasicBlock(t),
+                    })?;
+                    func.blocks.get(f.0).ok_or_else(|| ModuleCreationError {
+                        func: self.current_function.map(FunctionId),
+                        block: self.current_block.map(BasicBlockId),
+                        instr: None,
+                        term: Some(terminator.clone()),
+                        error: ModuleCreationErrorType::UnknownBasicBlock(f),
+                    })?;
+                }
+            }
+
             if let Some(block) = self.current_block.and_then(|v| func.blocks.get_mut(v)) {
                 block.terminator = terminator;
                 Ok(())
@@ -1112,6 +1200,7 @@ impl ModuleBuilder {
                             func: Some(FunctionId(f)),
                             block: Some(BasicBlockId(b)),
                             instr: None,
+                            term: None,
                             error: ModuleCreationErrorType::UnknownBasicBlock(BasicBlockId(b)),
                         })
                     }
@@ -1121,6 +1210,7 @@ impl ModuleBuilder {
                             func: self.current_function.map(FunctionId),
                             block: None,
                             instr: None,
+                            term: None,
                             error: ModuleCreationErrorType::NotInBlock,
                         })
                     }
@@ -1133,6 +1223,7 @@ impl ModuleBuilder {
                         func: Some(FunctionId(f)),
                         block: None,
                         instr: None,
+                        term: None,
                         error: ModuleCreationErrorType::UnknownFunction(FunctionId(f)),
                     })
                 }
@@ -1142,6 +1233,7 @@ impl ModuleBuilder {
                         func: None,
                         block: None,
                         instr: None,
+                        term: None,
                         error: ModuleCreationErrorType::NotInFunc,
                     })
                 }
@@ -1178,6 +1270,7 @@ impl ModuleBuilder {
                         func: Some(FunctionId(f)),
                         block: None,
                         instr: None,
+                        term: None,
                         error: ModuleCreationErrorType::UnknownFunction(FunctionId(f)),
                     })
                 }
@@ -1187,6 +1280,7 @@ impl ModuleBuilder {
                         func: None,
                         block: None,
                         instr: None,
+                        term: None,
                         error: ModuleCreationErrorType::NotInFunc,
                     })
                 }
@@ -1256,6 +1350,9 @@ pub struct ModuleCreationError {
     /// The instruction where this error occured in.
     pub instr: Option<Operation>,
 
+    /// The terminator where this error occured in.
+    pub term: Option<Terminator>,
+
     /// The contents of the error.
     pub error: ModuleCreationErrorType,
 }
@@ -1292,4 +1389,11 @@ pub enum ModuleCreationErrorType {
 
     /// Function arguments and number of arguments in function call do not match.
     MismatchedFuncArgs,
+
+    /// SSA basic block graph has a pair of immediately connected blocks where
+    /// the entry has multiple descendents and the exit has multiple predecessors.
+    IncorrectGraph(BasicBlockId, BasicBlockId),
+
+    /// A variable was gotten before it was set.
+    GottenBeforeSet(VariableId),
 }
