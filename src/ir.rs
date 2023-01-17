@@ -1381,6 +1381,12 @@ impl ModuleBuilder {
     }
 }
 
+impl Debug for ModuleBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.internal)
+    }
+}
+
 #[derive(Debug)]
 /// [`ModuleCreationError`] represents an error in module creation.
 pub struct ModuleCreationError {
