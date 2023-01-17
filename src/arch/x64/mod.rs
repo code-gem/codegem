@@ -107,6 +107,24 @@ pub enum X64AluOp {
     Xor,
 }
 
+pub enum X64Size {
+    Byte,
+    Word,
+    DWord,
+    QWord,
+}
+
+impl Display for X64Size {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            X64Size::Byte => write!(f, "byte"),
+            X64Size::Word => write!(f, "word"),
+            X64Size::DWord => write!(f, "dword"),
+            X64Size::QWord => write!(f, "qword"),
+        }
+    }
+}
+
 impl Display for X64AluOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -191,6 +209,18 @@ pub enum X64Instruction {
         location: Location,
         clobbers: Vec<VReg>,
     },
+
+    Load {
+        dest: VReg,
+        size: X64Size,
+        source: VReg,
+    },
+
+    Store {
+        size: X64Size,
+        dest: VReg,
+        source: VReg,
+    },
 }
 
 impl Display for X64Instruction {
@@ -211,6 +241,8 @@ impl Display for X64Instruction {
             X64Instruction::Push { source } => write!(f, "push {}", source),
             X64Instruction::Pop { dest } => write!(f, "pop {}", dest),
             X64Instruction::Call { location, .. } => write!(f, "call {}", location),
+            X64Instruction::Load { dest, size, source } => write!(f, "mov {}, {} [{}]", dest, size, source),
+            X64Instruction::Store { size, dest, source } => write!(f, "mov {} [{}], {}", size, dest, source),
         }
     }
 }
@@ -315,6 +347,18 @@ impl Instr for X64Instruction {
                     alloc.force_same(*clobber, arg);
                 }
             }
+
+            X64Instruction::Load { dest, source, .. } => {
+                alloc.add_def(*dest);
+                alloc.add_use(*dest);
+                alloc.add_use(*source);
+            }
+
+            X64Instruction::Store { dest, source, .. } => {
+                alloc.add_def(*dest);
+                alloc.add_use(*dest);
+                alloc.add_use(*source);
+            }
         }
     }
 
@@ -402,26 +446,69 @@ impl Instr for X64Instruction {
             X64Instruction::Pop { .. } => (),
 
             X64Instruction::Call { .. } => (),
+            X64Instruction::Load { dest, source, .. } => {
+                if let Some(new) = alloc.get(dest) {
+                    *dest = *new;
+                }
+                if let Some(new) = alloc.get(source) {
+                    *source = *new;
+                }
+            }
+            X64Instruction::Store { dest, source, .. } => {
+                if let Some(new) = alloc.get(dest) {
+                    *dest = *new;
+                }
+                if let Some(new) = alloc.get(source) {
+                    *source = *new;
+                }
+            }
         }
     }
 
     fn mandatory_transforms(vcode: &mut VCode<Self>) {
         for func in vcode.functions.iter_mut() {
             for labelled in func.labels.iter_mut() {
+                enum SwapType {
+                    Regular,
+                    Dest,
+                    DestRbx,
+                }
+
                 let mut swaps = Vec::new();
                 for (i, instruction) in labelled.instructions.iter().enumerate() {
                     match instruction {
                         X64Instruction::AluOp { dest, source, .. }
                         | X64Instruction::Mov { dest, source }
                         | X64Instruction::CMov { dest, source, .. } => {
-                            if let (VReg::Spilled(_), VReg::Spilled(_)) = (*dest, *source) {
-                                swaps.push((i, *source));
+                            if let (VReg::Spilled(_), VReg::Spilled(_)) = (dest, source) {
+                                swaps.push((i, *source, SwapType::Regular));
                             }
                         }
 
                         X64Instruction::Cmp { a, b } => {
-                            if let (VReg::Spilled(_), VReg::Spilled(_)) = (*a, *b) {
-                                swaps.push((i, *b));
+                            if let (VReg::Spilled(_), VReg::Spilled(_)) = (a, b) {
+                                swaps.push((i, *b, SwapType::Regular));
+                            }
+                        }
+
+                        X64Instruction::Load { dest, source, .. }
+                        | X64Instruction::Store { dest, source, .. } => {
+                            match (dest, source) {
+                                (VReg::Spilled(_), VReg::Spilled(_)) => {
+                                    swaps.push((i + 2, *source, SwapType::Regular));
+                                    swaps.push((i, *dest, SwapType::DestRbx));
+                                }
+
+                                // TODO: fix if rax is in use it uses rax again
+                                (VReg::Spilled(_), _) => {
+                                    swaps.push((i, *dest, SwapType::Dest));
+                                }
+
+                                (_, VReg::Spilled(_)) => {
+                                    swaps.push((i, *source, SwapType::Regular));
+                                }
+
+                                _ => (),
                             }
                         }
 
@@ -429,13 +516,18 @@ impl Instr for X64Instruction {
                     }
                 }
 
-                for (index, source) in swaps.into_iter().rev() {
+                for (index, source, swap_type) in swaps.into_iter().rev() {
+                    let reg = if let SwapType::DestRbx = swap_type {
+                        VReg::RealRegister(X64_REGISTER_RBX)
+                    } else {
+                        VReg::RealRegister(X64_REGISTER_RAX)
+                    };
                     labelled.instructions.insert(index, X64Instruction::Push {
-                        source: VReg::RealRegister(X64_REGISTER_RAX),
+                        source: reg,
                     });
 
                     labelled.instructions.insert(index + 1, X64Instruction::Mov {
-                        dest: VReg::RealRegister(X64_REGISTER_RAX),
+                        dest: reg,
                         source,
                     });
 
@@ -443,18 +535,27 @@ impl Instr for X64Instruction {
                         X64Instruction::AluOp { source, .. }
                         | X64Instruction::Mov { source, .. }
                         | X64Instruction::CMov { source, .. } => {
-                            *source = VReg::RealRegister(X64_REGISTER_RAX);
+                            *source = reg;
                         }
 
                         X64Instruction::Cmp { b, .. } => {
-                            *b = VReg::RealRegister(X64_REGISTER_RAX);
+                            *b = reg;
+                        }
+
+                        X64Instruction::Load { dest, source, .. }
+                        | X64Instruction::Store { dest, source, .. } => {
+                            if let SwapType::Regular = swap_type {
+                                *source = reg;
+                            } else {
+                                *dest = reg;
+                            }
                         }
 
                         _ => (),
                     }
 
                     labelled.instructions.insert(index + 3, X64Instruction::Pop {
-                        dest: VReg::RealRegister(X64_REGISTER_RAX),
+                        dest: reg,
                     });
                 }
             }
@@ -578,6 +679,15 @@ fn write_instruction(file: &mut impl Write, vcode: &VCode<X64Instruction>, func:
                 }
             }
         }
+
+        X64Instruction::Load { dest, size, source } => {
+            writeln!(file, "    mov {}, {} [{}]", dest, size, source)?;
+        }
+
+        X64Instruction::Store { size, dest, source } => {
+            writeln!(file, "    mov {} [{}], {}", size, dest, source)?;
+        }
+
     }
 
     Ok(())
@@ -900,8 +1010,28 @@ impl InstructionSelector for X64Selector {
             }
 
             Operation::CallIndirect(_, _) => todo!(),
-            Operation::Load(_) => todo!(),
-            Operation::Store(_, _) => todo!(),
+
+            Operation::Load(b) => {
+                if let Some(dest) = dest {
+                    let source = gen.get_vreg(b);
+                    gen.push_instruction(X64Instruction::Load {
+                        dest,
+                        size: X64Size::Byte,
+                        source,
+                    });
+                }
+            }
+
+            Operation::Store(a, b) => {
+                let dest = gen.get_vreg(a);
+                let source = gen.get_vreg(b);
+                gen.push_instruction(X64Instruction::Store {
+                    size: X64Size::Byte,
+                    dest,
+                    source,
+                });
+            }
+
             Operation::Bitcast(_, _) => todo!(),
             Operation::BitExtend(_, _) => todo!(),
             Operation::BitReduce(_, _) => todo!(),
