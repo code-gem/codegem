@@ -43,7 +43,7 @@ impl Module {
                     continue;
                 }
 
-                gen.push_label(BasicBlockId(FunctionId(f), i));
+                gen.push_label(BasicBlockId(i));
             }
 
             for (i, block) in func.blocks.into_iter().enumerate() {
@@ -51,7 +51,7 @@ impl Module {
                     continue;
                 }
 
-                gen.switch_to_label(BasicBlockId(FunctionId(f), i));
+                gen.switch_to_label(BasicBlockId(i));
                 if i == 0 {
                     selector.select_pre_function_instructions(&mut gen);
                 }
@@ -81,21 +81,29 @@ impl Display for Module {
 }
 
 /// [`Type`] represents a type in the IR.
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     /// A `void` type analogous to `void` in C or `()` in Rust.
     Void,
 
     /// A signed or unsigned integer type with a given bitwidth.
     Integer(bool, u8),
+
+    /// A pointer to the given type.
+    Pointer(Box<Type>),
 }
 
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Type::Void => write!(f, "void"),
+
             Type::Integer(signed, width) => {
                 write!(f, "{}{}", if *signed { "i" } else { "u" }, width)
+            }
+
+            Type::Pointer(pointed) => {
+                write!(f, "*{}", pointed)
             }
         }
     }
@@ -140,6 +148,7 @@ struct Function {
     arg_types: Vec<Type>,
     ret_type: Type,
     variables: Vec<Variable>,
+    value_types: Vec<Type>,
     blocks: Vec<BasicBlock>,
     value_index: usize,
 }
@@ -176,7 +185,7 @@ impl Display for Function {
 }
 
 /// [`FunctionId`] represents a reference to a function in IR.
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct FunctionId(usize);
 
 impl Display for FunctionId {
@@ -191,7 +200,7 @@ struct Variable {
 }
 
 /// [`VariableId`] represents a reference to a variable in an IR function.
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct VariableId(usize);
 
 impl Display for VariableId {
@@ -218,12 +227,12 @@ impl Display for BasicBlock {
 
 /// [`BasicBlockId`] represents a reference to a basic block in an IR function. See
 /// [`ModuleBuilder::push_block`] for details on what a basic block is.
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
-pub struct BasicBlockId(FunctionId, usize);
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub struct BasicBlockId(usize);
 
 impl Display for BasicBlockId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "${}", self.1)
+        write!(f, "${}", self.0)
     }
 }
 
@@ -321,6 +330,7 @@ impl ToIntegerOperation for u128 {
 }
 
 /// [`Operation`] is an operation that can be performed by the IR.
+#[derive(Debug)]
 pub enum Operation {
     /// Does nothing to the given value, returning a new value that has the same contents as the
     /// passed in value. This is used internally.
@@ -419,6 +429,21 @@ pub enum Operation {
 
     /// Calls a function value with the given arguments.
     CallIndirect(Value, Vec<Value>),
+
+    /// Loads a value from a given address.
+    Load(Value),
+
+    /// Stores a value into a given address.
+    Store(Value, Value),
+
+    /// Bitcasts two different types of the same size.
+    Bitcast(Type, Value),
+
+    /// Bit extends from a smaller type to a larger type. This operation sign extends if the resulting type is signed.
+    BitExtend(Type, Value),
+
+    /// Bit reduces from a larger type to a smaller type. This operation preserves the sign bit if the resulting type is signed.
+    BitReduce(Type, Value),
 }
 
 impl Display for Operation {
@@ -501,12 +526,20 @@ impl Display for Operation {
                 }
                 write!(f, ")")
             }
+
+            Operation::Load(ptr) => write!(f, "load {}", ptr),
+            Operation::Store(ptr, value) => write!(f, "store {}, {}", ptr, value),
+
+            Operation::Bitcast(type_, value) => write!(f, "bitcast {} {}", type_, value),
+            Operation::BitExtend(type_, value) => write!(f, "bitextend {} {}", type_, value),
+            Operation::BitReduce(type_, value) => write!(f, "bitreduce {} {}", type_, value),
         }
     }
 }
 
 /// [`Terminator`] terminates a given basic block. For information on basic blocks, see
 /// [`ModuleBuilder::push_block`].
+#[derive(Debug)]
 pub enum Terminator {
     /// No terminator has been added to the block yet. Note that compiling blocks with this as its
     /// terminator results in undefined behaviour.
@@ -540,7 +573,7 @@ impl Display for Terminator {
 }
 
 /// [`Value`] represents a reference to a value in an IR function.
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Value(pub(crate) usize);
 
 impl Display for Value {
@@ -553,20 +586,18 @@ impl Display for Value {
 ///
 /// # Example
 /// ```rust
-/// # fn testy() -> Option<()> {
 /// # use codegem::ir::*;
+/// # fn testy() -> Result<(), ModuleCreationError> {
 /// let mut builder = ModuleBuilder::default()
 ///     .with_name("uwu");
 /// let main = builder.new_function("main", Linkage::Public, &[], &Type::Void);
 /// builder.switch_to_function(main);
 /// let entry = builder.push_block()?;
 /// builder.switch_to_block(entry);
-/// let val = builder.push_instruction(
-///     69u32.to_integer_operation()
-/// )?;
-/// builder.set_terminator(Terminator::Return(val));
+/// let val = builder.push_instruction(69u32.to_integer_operation())?.unwrap();
+/// builder.set_terminator(Terminator::Return(val))?;
 /// let module = builder.build();
-/// # Some(())
+/// # Ok(())
 /// # }
 /// ```
 #[derive(Default)]
@@ -601,7 +632,7 @@ impl ModuleBuilder {
     /// ```
     // TODO: return Result<Module, MalformedIrError> on malformed IR instead of panicking.
     pub fn build(mut self) -> Module {
-        for (f, func) in self.internal.functions.iter_mut().enumerate() {
+        for (_, func) in self.internal.functions.iter_mut().enumerate() {
             let mut blocks_prec = vec![HashSet::new(); func.blocks.len()];
             for (i, block) in func.blocks.iter().enumerate() {
                 match &block.terminator {
@@ -610,14 +641,14 @@ impl ModuleBuilder {
                     Terminator::Return(_) => (),
 
                     Terminator::Jump(next) => {
-                        let this = BasicBlockId(FunctionId(f), i);
-                        blocks_prec[next.1].insert(this);
+                        let this = BasicBlockId(i);
+                        blocks_prec[next.0].insert(this);
                     }
 
                     Terminator::Branch(_, on_true, on_false) => {
-                        let this = BasicBlockId(FunctionId(f), i);
-                        blocks_prec[on_true.1].insert(this);
-                        blocks_prec[on_false.1].insert(this);
+                        let this = BasicBlockId(i);
+                        blocks_prec[on_true.0].insert(this);
+                        blocks_prec[on_false.0].insert(this);
                     }
                 }
             }
@@ -637,7 +668,7 @@ impl ModuleBuilder {
 
                     if block.predecessors.is_empty() {
                         block.deleted = true;
-                        removed.push(BasicBlockId(FunctionId(f), i));
+                        removed.push(BasicBlockId(i));
                     }
                 }
 
@@ -656,7 +687,7 @@ impl ModuleBuilder {
                 }
 
                 if let Terminator::Branch(_, a, b) = block.terminator {
-                    if func.blocks[a.1].predecessors.len() > 1 || func.blocks[b.1].predecessors.len() > 1 {
+                    if func.blocks[a.0].predecessors.len() > 1 || func.blocks[b.0].predecessors.len() > 1 {
                         panic!("malformed ir");
                     }
                 }
@@ -677,7 +708,7 @@ impl ModuleBuilder {
                     0 => (),
 
                     1 => {
-                        let prev = block.predecessors.iter().next().unwrap().1;
+                        let prev = block.predecessors.iter().next().unwrap().0;
                         for var in 0..func.variables.len() {
                             let var = VariableId(var);
                             if let Some(&val) = var_map.get(&(var, prev)) {
@@ -741,7 +772,7 @@ impl ModuleBuilder {
                     for instruction in block.instructions.iter_mut() {
                         if let Operation::Phi(mapping) = &mut instruction.operation {
                             if let Some(&var) = instruction.yielded.as_ref().and_then(|v| phi_to_var_map.get(v)) {
-                                *mapping = block.predecessors.iter().filter_map(|&v| var_map.get(&(var, v.1)).map(|&u| (v, u))).collect();
+                                *mapping = block.predecessors.iter().filter_map(|&v| var_map.get(&(var, v.0)).map(|&u| (v, u))).collect();
                             }
                         }
                     }
@@ -782,6 +813,7 @@ impl ModuleBuilder {
                     type_: t.clone(),
                 })
                 .collect(),
+            value_types: args.iter().map(|(_, t)| t.clone()).collect(),
             blocks: Vec::new(),
             value_index: args.len(),
         });
@@ -815,14 +847,13 @@ impl ModuleBuilder {
     /// # Example
     /// ```rust
     /// # use codegem::ir::*;
-    /// # fn testy(builder: &mut ModuleBuilder) -> Option<()> {
+    /// # fn testy(builder: &mut ModuleBuilder) -> Result<(), ModuleCreationError> {
     /// let entry_block = builder.push_block()?;
-    /// # None
+    /// # Ok(())
     /// # }
     /// ```
-    pub fn push_block(&mut self) -> Option<BasicBlockId> {
-        if let Some(func_id) = self.current_function {
-            let func = self.internal.functions.get_mut(func_id)?;
+    pub fn push_block(&mut self) -> Result<BasicBlockId, ModuleCreationError> {
+        if let Some(func) = self.current_function.and_then(|v| self.internal.functions.get_mut(v)) {
             let block_id = func.blocks.len();
             func.blocks.push(BasicBlock {
                 deleted: false,
@@ -830,9 +861,27 @@ impl ModuleBuilder {
                 instructions: Vec::new(),
                 terminator: Terminator::NoTerminator,
             });
-            Some(BasicBlockId(FunctionId(func_id), block_id))
+            Ok(BasicBlockId(block_id))
         } else {
-            None
+            match self.current_function {
+                Some(f) => {
+                    Err(ModuleCreationError {
+                        func: Some(FunctionId(f)),
+                        block: None,
+                        instr: None,
+                        error: ModuleCreationErrorType::UnknownFunction(FunctionId(f)),
+                    })
+                }
+
+                None => {
+                    Err(ModuleCreationError {
+                        func: None,
+                        block: None,
+                        instr: None,
+                        error: ModuleCreationErrorType::NotInFunc,
+                    })
+                }
+            }
         }
     }
 
@@ -841,16 +890,120 @@ impl ModuleBuilder {
     /// # Example
     /// ```rust
     /// # use codegem::ir::*;
-    /// # fn testy(builder: &mut ModuleBuilder) -> Option<()> {
+    /// # fn testy(builder: &mut ModuleBuilder) -> Result<(), ModuleCreationError> {
     /// let entry_block = builder.push_block()?;
     /// builder.switch_to_block(entry_block);
-    /// # None
+    /// # Ok(())
     /// # }
     /// ```
     pub fn switch_to_block(&mut self, id: BasicBlockId) {
         match self.current_function {
-            Some(x) if id.0 .0 == x => self.current_block = Some(id.1),
+            Some(_) => self.current_block = Some(id.0),
             _ => self.current_block = None,
+        }
+    }
+
+    fn typecheck(&self, instr: &Operation) -> Result<Type, ModuleCreationErrorType> {
+        if let Some(func) = self.current_function.and_then(|v| self.internal.functions.get(v)) {
+            match instr {
+                Operation::Identity(v) => func.value_types.get(v.0).cloned().ok_or_else(|| ModuleCreationErrorType::UnknownValue(*v)),
+                Operation::Integer(t, _) => Ok(t.clone()),
+                Operation::Add(a, b)
+                | Operation::Sub(a, b)
+                | Operation::Mul(a, b)
+                | Operation::Div(a, b)
+                | Operation::Mod(a, b)
+                | Operation::Bsl(a, b)
+                | Operation::Bsr(a, b)
+                | Operation::Eq(a, b)
+                | Operation::Ne(a, b)
+                | Operation::Lt(a, b)
+                | Operation::Le(a, b)
+                | Operation::Gt(a, b)
+                | Operation::Ge(a, b)
+                | Operation::BitAnd(a, b)
+                | Operation::BitOr(a, b)
+                | Operation::BitXor(a, b) => {
+                    let a = func.value_types.get(a.0).cloned().ok_or_else(|| ModuleCreationErrorType::UnknownValue(*a))?;
+                    let b = func.value_types.get(b.0).cloned().ok_or_else(|| ModuleCreationErrorType::UnknownValue(*b))?;
+
+                    if a != b {
+                        return Err(ModuleCreationErrorType::TypeMismatch(a, b));
+                    }
+
+                    if matches!(a, Type::Integer(_, _)) {
+                        Ok(a)
+                    } else {
+                        Err(ModuleCreationErrorType::TypeMismatch(a, b))
+                    }
+                }
+
+                Operation::Phi(mappings) => {
+                    let mut t = None;
+
+                    for &(b, x) in mappings {
+                        if func.blocks.get(b.0).is_none() {
+                            return Err(ModuleCreationErrorType::UnknownBasicBlock(b));
+                        }
+
+                        let x = func.value_types.get(x.0).cloned().ok_or_else(|| ModuleCreationErrorType::UnknownValue(x))?;
+                        match t {
+                            Some(u) if u == x => t = Some(x),
+                            None => t = Some(x),
+                            Some(t) => return Err(ModuleCreationErrorType::TypeMismatch(t, x)),
+                        }
+                    }
+
+                    if let Some(t) = t {
+                        Ok(t)
+                    } else {
+                        Err(ModuleCreationErrorType::EmptyPhiNode)
+                    }
+                }
+
+                Operation::GetVar(var) => {
+                    func.variables.get(var.0).map(|v| v.type_.clone()).ok_or_else(|| ModuleCreationErrorType::UnknownVariable(*var))
+                }
+
+                Operation::SetVar(var, val) => {
+                    let var = func.variables.get(var.0).map(|v| &v.type_).ok_or_else(|| ModuleCreationErrorType::UnknownVariable(*var))?;
+                    let val = func.value_types.get(val.0).ok_or_else(|| ModuleCreationErrorType::UnknownValue(*val))?;
+
+                    if var == val {
+                        Ok(Type::Void)
+                    } else {
+                        Err(ModuleCreationErrorType::TypeMismatch(var.clone(), val.clone()))
+                    }
+                }
+
+                Operation::Call(f, args) => {
+                    let f = self.internal.functions.get(f.0).ok_or_else(|| ModuleCreationErrorType::UnknownFunction(*f))?;
+
+                    if f.arg_types.len() != args.len() {
+                        return Err(ModuleCreationErrorType::MismatchedFuncArgs);
+                    }
+
+                    for (fa, a) in f.arg_types.iter().zip(args.iter()) {
+                        let a = func.value_types.get(a.0).ok_or_else(|| ModuleCreationErrorType::UnknownValue(*a))?;
+
+                        if fa != a {
+                            return Err(ModuleCreationErrorType::TypeMismatch(fa.clone(), a.clone()));
+                        }
+                    }
+
+                    Ok(f.ret_type.clone())
+                }
+
+                Operation::CallIndirect(_, _) => todo!(),
+
+                Operation::Load(_) => todo!(),
+                Operation::Store(_, _) => todo!(),
+                Operation::Bitcast(_, _) => todo!(),
+                Operation::BitExtend(_, _) => todo!(),
+                Operation::BitReduce(_, _) => todo!(),
+            }
+        } else {
+            Err(ModuleCreationErrorType::NotInFunc)
         }
     }
 
@@ -862,48 +1015,80 @@ impl ModuleBuilder {
     /// # Example
     /// ```rust
     /// # use codegem::ir::*;
-    /// # fn testy(builder: &mut ModuleBuilder) -> Option<()> {
-    /// builder.push_instruction(
-    ///     69i32.to_integer_operation()
-    /// );
-    /// # None
+    /// # fn testy(builder: &mut ModuleBuilder) -> Result<(), ModuleCreationError> {
+    /// builder.push_instruction(69i32.to_integer_operation())?;
+    /// # Ok(())
     /// # }
-    pub fn push_instruction(&mut self, instr: Operation) -> Option<Value> {
-        if let Some(func_id) = self.current_function {
-            if let Some(block_id) = self.current_block {
-                let yielded = match &instr {
-                    Operation::SetVar(_, _) => false,
-                    Operation::Call(f, _) => {
-                        if let Some(f) = self.internal.functions.get(f.0) {
-                            !matches!(f.ret_type, Type::Void)
-                        } else {
-                            false
-                        }
-                    }
+    pub fn push_instruction(&mut self, instr: Operation) -> Result<Option<Value>, ModuleCreationError> {
+        let type_ = match self.typecheck(&instr) {
+            Ok(t) => t,
+            Err(error) => {
+                return Err(ModuleCreationError {
+                    func: self.get_function(),
+                    block: self.get_block(),
+                    instr: Some(instr),
+                    error,
+                });
+            }
+        };
 
-                    _ => true,
-                };
-                let func = self.internal.functions.get_mut(func_id)?;
-                let block = func.blocks.get_mut(block_id)?;
-                let yielded = if yielded {
-                    func.value_index += 1;
-                    Some(Value(func.value_index - 1))
-                } else {
-                    None
-                };
+        if let Some(func) = self.current_function.and_then(|v| self.internal.functions.get_mut(v)) {
+            let yielded = if let Type::Void = type_ {
+                None
+            } else {
+                func.value_index += 1;
+                Some(Value(func.value_index - 1))
+            };
+
+            if let Some(block) = self.current_block.and_then(|v| func.blocks.get_mut(v)) {
                 block.instructions.push(Instruction {
                     yielded,
                     operation: instr,
                 });
-                if let Some(_) = yielded {
-                    return yielded;
-                } else {
-                    return None;
+
+                Ok(yielded)
+            } else {
+                match (self.current_function, self.current_block) {
+                    (Some(f), Some(b))=> {
+                        Err(ModuleCreationError {
+                            func: Some(FunctionId(f)),
+                            block: Some(BasicBlockId(b)),
+                            instr: Some(instr),
+                            error: ModuleCreationErrorType::UnknownBasicBlock(BasicBlockId(b)),
+                        })
+                    }
+
+                    _ => {
+                        Err(ModuleCreationError {
+                            func: self.current_function.map(FunctionId),
+                            block: None,
+                            instr: Some(instr),
+                            error: ModuleCreationErrorType::NotInBlock,
+                        })
+                    }
+                }
+            }
+        } else {
+            match self.current_function {
+                Some(f) => {
+                    Err(ModuleCreationError {
+                        func: Some(FunctionId(f)),
+                        block: None,
+                        instr: Some(instr),
+                        error: ModuleCreationErrorType::UnknownFunction(FunctionId(f)),
+                    })
+                }
+
+                None => {
+                    Err(ModuleCreationError {
+                        func: None,
+                        block: None,
+                        instr: Some(instr),
+                        error: ModuleCreationErrorType::NotInFunc,
+                    })
                 }
             }
         }
-
-        None
     }
 
     /// Sets the [`Terminator`] of the current basic block.
@@ -911,13 +1096,55 @@ impl ModuleBuilder {
     /// # Example
     /// ```rust
     /// # use codegem::ir::*;
-    /// # fn testy(builder: &mut ModuleBuilder) {
-    /// builder.set_terminator(Terminator::ReturnVoid);
+    /// # fn testy(builder: &mut ModuleBuilder) -> Result<(), ModuleCreationError> {
+    /// builder.set_terminator(Terminator::ReturnVoid)?;
+    /// # Ok(())
     /// # }
-    pub fn set_terminator(&mut self, terminator: Terminator) {
+    pub fn set_terminator(&mut self, terminator: Terminator) -> Result<(), ModuleCreationError> {
         if let Some(func) = self.current_function.and_then(|v| self.internal.functions.get_mut(v)) {
             if let Some(block) = self.current_block.and_then(|v| func.blocks.get_mut(v)) {
                 block.terminator = terminator;
+                Ok(())
+            } else {
+                match (self.current_function, self.current_block) {
+                    (Some(f), Some(b))=> {
+                        Err(ModuleCreationError {
+                            func: Some(FunctionId(f)),
+                            block: Some(BasicBlockId(b)),
+                            instr: None,
+                            error: ModuleCreationErrorType::UnknownBasicBlock(BasicBlockId(b)),
+                        })
+                    }
+
+                    _ => {
+                        Err(ModuleCreationError {
+                            func: self.current_function.map(FunctionId),
+                            block: None,
+                            instr: None,
+                            error: ModuleCreationErrorType::NotInBlock,
+                        })
+                    }
+                }
+            }
+        } else {
+            match self.current_function {
+                Some(f) => {
+                    Err(ModuleCreationError {
+                        func: Some(FunctionId(f)),
+                        block: None,
+                        instr: None,
+                        error: ModuleCreationErrorType::UnknownFunction(FunctionId(f)),
+                    })
+                }
+
+                None => {
+                    Err(ModuleCreationError {
+                        func: None,
+                        block: None,
+                        instr: None,
+                        error: ModuleCreationErrorType::NotInFunc,
+                    })
+                }
             }
         }
     }
@@ -931,21 +1158,39 @@ impl ModuleBuilder {
     /// # Example
     /// ```rust
     /// # use codegem::ir::*;
-    /// # fn testy(builder: &mut ModuleBuilder) {
-    /// let i = builder.push_variable("i", &Type::Integer(true, 32));
+    /// # fn testy(builder: &mut ModuleBuilder) -> Result<(), ModuleCreationError> {
+    /// let i = builder.push_variable("i", &Type::Integer(true, 32))?;
+    /// # Ok(())
     /// # }
     /// ```
-    pub fn push_variable(&mut self, name: &str, type_: &Type) -> Option<VariableId> {
-        if let Some(func_id) = self.current_function {
-            let func = self.internal.functions.get_mut(func_id)?;
+    pub fn push_variable(&mut self, name: &str, type_: &Type) -> Result<VariableId, ModuleCreationError> {
+        if let Some(func) = self.current_function.and_then(|v| self.internal.functions.get_mut(v)) {
             let id = func.variables.len();
             func.variables.push(Variable {
                 name: name.to_owned(),
                 type_: type_.clone(),
             });
-            Some(VariableId(id))
+            Ok(VariableId(id))
         } else {
-            None
+            match self.current_function {
+                Some(f) => {
+                    Err(ModuleCreationError {
+                        func: Some(FunctionId(f)),
+                        block: None,
+                        instr: None,
+                        error: ModuleCreationErrorType::UnknownFunction(FunctionId(f)),
+                    })
+                }
+
+                None => {
+                    Err(ModuleCreationError {
+                        func: None,
+                        block: None,
+                        instr: None,
+                        error: ModuleCreationErrorType::NotInFunc,
+                    })
+                }
+            }
         }
     }
 
@@ -991,10 +1236,60 @@ impl ModuleBuilder {
     /// # }
     /// ```
     pub fn get_block(&self) -> Option<BasicBlockId> {
-        if let Some(f) = self.get_function() {
-            self.current_block.map(|b| BasicBlockId(f, b))
+        if self.get_function().is_some() {
+            self.current_block.map(|b| BasicBlockId(b))
         } else {
             None
         }
     }
+}
+
+#[derive(Debug)]
+/// [`ModuleCreationError`] represents an error in module creation.
+pub struct ModuleCreationError {
+    /// The function where this error occured in.
+    pub func: Option<FunctionId>,
+
+    /// The block where this error occured in.
+    pub block: Option<BasicBlockId>,
+
+    /// The instruction where this error occured in.
+    pub instr: Option<Operation>,
+
+    /// The contents of the error.
+    pub error: ModuleCreationErrorType,
+}
+
+#[derive(Debug)]
+/// [`ModuleCreationErrorType`] represents an error in module creation.
+pub enum ModuleCreationErrorType {
+    /// Expected that the function called be done when a function is selectd.
+    NotInFunc,
+
+    /// Expected that the function called be done when a basic block is selectd.
+    NotInBlock,
+
+    /// Value is not previously defined.
+    UnknownValue(Value),
+
+    /// The two types were supposed to match but do not.
+    TypeMismatch(Type, Type),
+
+    /// The first type was supposed to match the second type in form but does not.
+    TypePattern(Type, Type),
+
+    /// A phi node is empty.
+    EmptyPhiNode,
+
+    /// Value is not previously created.
+    UnknownVariable(VariableId),
+
+    /// Function is not previously defined.
+    UnknownFunction(FunctionId),
+
+    /// Function is not previously defined.
+    UnknownBasicBlock(BasicBlockId),
+
+    /// Function arguments and number of arguments in function call do not match.
+    MismatchedFuncArgs,
 }

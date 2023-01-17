@@ -838,6 +838,11 @@ impl InstructionSelector for UrclSelector {
 
             Operation::Call(_, _) => todo!(),
             Operation::CallIndirect(_, _) => todo!(),
+            Operation::Load(_) => todo!(),
+            Operation::Store(_, _) => todo!(),
+            Operation::Bitcast(_, _) => todo!(),
+            Operation::BitExtend(_, _) => todo!(),
+            Operation::BitReduce(_, _) => todo!(),
         }
     }
 

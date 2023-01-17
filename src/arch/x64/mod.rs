@@ -900,6 +900,11 @@ impl InstructionSelector for X64Selector {
             }
 
             Operation::CallIndirect(_, _) => todo!(),
+            Operation::Load(_) => todo!(),
+            Operation::Store(_, _) => todo!(),
+            Operation::Bitcast(_, _) => todo!(),
+            Operation::BitExtend(_, _) => todo!(),
+            Operation::BitReduce(_, _) => todo!(),
         }
     }
 
