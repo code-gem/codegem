@@ -942,7 +942,8 @@ impl ModuleBuilder {
         if let Some(func) = self.current_function.and_then(|v| self.internal.functions.get(v)) {
             match instr {
                 Operation::Identity(v) => func.value_types.get(v.0).cloned().ok_or_else(|| ModuleCreationErrorType::UnknownValue(*v)),
-                Operation::Integer(t, _) => Ok(t.clone()),
+                Operation::Integer(t, _) if matches!(t, Type::Integer(_, _)) => Ok(t.clone()),
+                Operation::Integer(t, _) => Err(ModuleCreationErrorType::TypePattern(t.clone(), Type::Integer(false, 0))),
                 Operation::Add(a, b)
                 | Operation::Sub(a, b)
                 | Operation::Mul(a, b)
@@ -1072,8 +1073,10 @@ impl ModuleBuilder {
             let yielded = if let Type::Void = type_ {
                 None
             } else {
+                let value = Value(func.value_index);
+                func.value_types.push(type_);
                 func.value_index += 1;
-                Some(Value(func.value_index - 1))
+                Some(value)
             };
 
             if let Some(block) = self.current_block.and_then(|v| func.blocks.get_mut(v)) {
