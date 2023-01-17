@@ -1032,11 +1032,51 @@ impl ModuleBuilder {
 
                 Operation::CallIndirect(_, _) => todo!(),
 
-                Operation::Load(_) => todo!(),
-                Operation::Store(_, _) => todo!(),
-                Operation::Bitcast(_, _) => todo!(),
-                Operation::BitExtend(_, _) => todo!(),
-                Operation::BitReduce(_, _) => todo!(),
+                Operation::Load(ptr) => {
+                    let ptr = func.value_types.get(ptr.0).ok_or_else(|| ModuleCreationErrorType::UnknownValue(*ptr))?;
+                    if let Type::Pointer(t) = ptr {
+                        Ok((**t).clone())
+                    } else {
+                        Err(ModuleCreationErrorType::PointerOpOnNonpointer(ptr.clone()))
+                    }
+                }
+
+                Operation::Store(ptr, val) => {
+                    let ptr = func.value_types.get(ptr.0).ok_or_else(|| ModuleCreationErrorType::UnknownValue(*ptr))?;
+                    let val = func.value_types.get(val.0).ok_or_else(|| ModuleCreationErrorType::UnknownValue(*val))?;
+                    match ptr {
+                        Type::Pointer(t) if **t == *val => Ok(Type::Void),
+                        Type::Pointer(t) => Err(ModuleCreationErrorType::TypeMismatch((**t).clone(), val.clone())),
+                        _ => Err(ModuleCreationErrorType::PointerOpOnNonpointer(ptr.clone())),
+                    }
+                }
+
+                Operation::Bitcast(type_, v) => {
+                    let v = func.value_types.get(v.0).ok_or_else(|| ModuleCreationErrorType::UnknownValue(*v))?;
+
+                    match (type_, v) {
+                        (Type::Integer(_, w1), Type::Integer(_, w2)) if w1 == w2 => (),
+                        (Type::Pointer(_), Type::Integer(_, _)) => (),
+                        (Type::Integer(_, _), Type::Pointer(_)) => (),
+                        (Type::Pointer(_), Type::Pointer(_)) => (),
+                        _ => return Err(ModuleCreationErrorType::InvalidBitcast(type_.clone(), v.clone())),
+                    }
+
+                    Ok(type_.clone())
+                }
+
+                Operation::BitExtend(type_, v)
+                | Operation::BitReduce(type_, v) => {
+                    let v = func.value_types.get(v.0).ok_or_else(|| ModuleCreationErrorType::UnknownValue(*v))?;
+
+                    match (type_, v) {
+                        (Type::Integer(_, _), Type::Integer(_, _)) => (),
+                        _ => return Err(ModuleCreationErrorType::InvalidBitwidthChange(type_.clone(), v.clone()))
+                    }
+
+                    Ok(type_.clone())
+                }
+
             }
         } else {
             Err(ModuleCreationErrorType::NotInFunc)
@@ -1399,4 +1439,13 @@ pub enum ModuleCreationErrorType {
 
     /// A variable was gotten before it was set.
     GottenBeforeSet(VariableId),
+
+    /// A pointer operation is performed on a nonpointer type.
+    PointerOpOnNonpointer(Type),
+
+    /// A bitcast is invalid.
+    InvalidBitcast(Type, Type),
+
+    /// A bitreduce or bitextend is invalid.
+    InvalidBitwidthChange(Type, Type),
 }
