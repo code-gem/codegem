@@ -93,6 +93,15 @@ pub enum Type {
     Pointer(Box<Type>),
 }
 
+impl Type {
+    pub fn is_integer(self) -> bool {
+        match self {
+            Type::Integer(_, _) => true,
+            _ => false
+        }
+    }
+}
+
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -963,7 +972,7 @@ impl ModuleBuilder {
                     let a = func.value_types.get(a.0).cloned().ok_or_else(|| ModuleCreationErrorType::UnknownValue(*a))?;
                     let b = func.value_types.get(b.0).cloned().ok_or_else(|| ModuleCreationErrorType::UnknownValue(*b))?;
 
-                    if a != b {
+                    if a != b && ((!a.clone().is_integer()) || (!b.clone().is_integer())) { // integers shouldnt err
                         return Err(ModuleCreationErrorType::TypeMismatch(a, b));
                     }
 
@@ -1005,7 +1014,7 @@ impl ModuleBuilder {
                     let var = func.variables.get(var.0).map(|v| &v.type_).ok_or_else(|| ModuleCreationErrorType::UnknownVariable(*var))?;
                     let val = func.value_types.get(val.0).ok_or_else(|| ModuleCreationErrorType::UnknownValue(*val))?;
 
-                    if var == val {
+                    if var == val || (val.clone().is_integer() && var.clone().is_integer()) {
                         Ok(Type::Void)
                     } else {
                         Err(ModuleCreationErrorType::TypeMismatch(var.clone(), val.clone()))
