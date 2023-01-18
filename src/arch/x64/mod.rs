@@ -53,7 +53,7 @@ jle
 use std::{collections::HashMap, fmt::Display, io::{Write, self}};
 
 use crate::{
-    ir::{Operation, Terminator, Value, Linkage},
+    ir::{Operation, Terminator, Value, Linkage, Type},
     regalloc::RegisterAllocator,
 };
 
@@ -1014,9 +1014,17 @@ impl InstructionSelector for X64Selector {
             Operation::Load(b) => {
                 if let Some(dest) = dest {
                     let source = gen.get_vreg(b);
+                    let size = match result.and_then(|v| gen.get_value_type(v)) {
+                        Some(&Type::Integer(_, 8)) => X64Size::Byte,
+                        Some(&Type::Integer(_, 16)) => X64Size::Word,
+                        Some(&Type::Integer(_, 32)) => X64Size::DWord,
+                        Some(&Type::Integer(_, 64)) | Some(&Type::Pointer(_)) => X64Size::QWord,
+                        _ => todo!(),
+                    };
+
                     gen.push_instruction(X64Instruction::Load {
                         dest,
-                        size: X64Size::Byte,
+                        size,
                         source,
                     });
                 }
@@ -1025,8 +1033,16 @@ impl InstructionSelector for X64Selector {
             Operation::Store(a, b) => {
                 let dest = gen.get_vreg(a);
                 let source = gen.get_vreg(b);
+                let size = match gen.get_value_type(b) {
+                    Some(&Type::Integer(_, 8)) => X64Size::Byte,
+                    Some(&Type::Integer(_, 16)) => X64Size::Word,
+                    Some(&Type::Integer(_, 32)) => X64Size::DWord,
+                    Some(&Type::Integer(_, 64)) | Some(&Type::Pointer(_)) => X64Size::QWord,
+                    _ => todo!(),
+                };
+
                 gen.push_instruction(X64Instruction::Store {
-                    size: X64Size::Byte,
+                    size,
                     dest,
                     source,
                 });

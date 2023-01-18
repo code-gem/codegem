@@ -38,6 +38,7 @@ impl Module {
 
         for (f, func) in self.functions.into_iter().enumerate() {
             gen.switch_to_function(FunctionId(f));
+            gen.set_value_to_type_map(&func.value_types);
             for (i, block) in func.blocks.iter().enumerate() {
                 if block.deleted {
                     continue;
@@ -148,7 +149,7 @@ struct Function {
     arg_types: Vec<Type>,
     ret_type: Type,
     variables: Vec<Variable>,
-    value_types: Vec<Type>,
+    pub(crate) value_types: Vec<Type>,
     blocks: Vec<BasicBlock>,
     value_index: usize,
 }

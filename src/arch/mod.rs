@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Display, marker::PhantomData, io::{Write, self}};
 
-use crate::ir::Linkage;
+use crate::ir::{Linkage, Type};
 
 use super::{
     ir::{BasicBlockId, FunctionId, Operation, Terminator, Value},
@@ -202,6 +202,7 @@ where
     current_function: Option<usize>,
     current_block: Option<usize>,
     value_map: HashMap<Value, VReg>,
+    value_type_mapping: Vec<Type>,
     vreg_index: usize,
 }
 
@@ -222,6 +223,7 @@ where
             current_function: None,
             current_block: None,
             value_map: HashMap::new(),
+            value_type_mapping: Vec::new(),
             vreg_index: 0,
         }
     }
@@ -253,6 +255,10 @@ where
         reg
     }
 
+    pub fn get_value_type(&self, value: Value) -> Option<&Type> {
+        self.value_type_mapping.get(value.0)
+    }
+
     /// Returns the map from IR [`FunctionId`]s to indexes into the [`VCode`]'s list of functions.
     pub fn func_map(&self) -> &HashMap<FunctionId, usize> {
         &self.func_map
@@ -282,6 +288,10 @@ where
         self.label_map.clear();
         self.value_map.clear();
         self.vreg_index = 0;
+    }
+
+    pub(crate) fn set_value_to_type_map(&mut self, map: &Vec<Type>) {
+        self.value_type_mapping = map.clone();
     }
 
     pub(crate) fn push_label(&mut self, id: BasicBlockId) {
