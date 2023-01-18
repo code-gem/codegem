@@ -876,7 +876,7 @@ impl InstructionSelector for UrclSelector {
             Operation::GetVar(_) => unreachable!(),
             Operation::SetVar(_, _) => unreachable!(),
 
-            Operation::Call(id, _) => {
+            Operation::Call(id, args) => {
                 if let Some(&id) = gen.func_map().get(&id) {
                     let save_regs = vec![
                         VReg::RealRegister(URCL_REGISTER_R1),
@@ -888,12 +888,21 @@ impl InstructionSelector for UrclSelector {
                         VReg::RealRegister(URCL_REGISTER_R7),
                         VReg::RealRegister(URCL_REGISTER_R8)
                     ];
-                    for reg in save_regs {
+                    for reg in save_regs.clone() {
                         gen.push_instruction(UrclInstruction::Psh { rx: reg })
                     }
-                    gen.push_instruction(UrclInstruction::Cal { location: Location::Function(id) })
-                    
 
+                    let clobbers: Vec<_> = args.into_iter().map(|v| {
+                        let clobber = gen.new_unassociated_vreg();
+                        let rx = gen.get_vreg(v);
+                        gen.push_instruction(UrclInstruction::Add { rd: clobber, rx, ry: VReg::RealRegister(URCL_REGISTER_ZERO) });
+                        clobber
+                    }).collect();
+                    gen.push_instruction(UrclInstruction::Cal { location: Location::Function(id) });
+                    
+                    for rd in save_regs.into_iter() {
+                        gen.push_instruction(UrclInstruction::Pop { rd });
+                    }
                 }
             },
             Operation::CallIndirect(_, _) => todo!(),
