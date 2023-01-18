@@ -210,7 +210,7 @@ impl Display for UrclInstruction {
             UrclInstruction::Bre { location, rx, ry } => write!(f, "bre {} {} {}", location, rx, ry),
 
             UrclInstruction::Brl { location, rx, ry } => write!(f, "brl {} {} {}", location, rx, ry),
-            
+
             UrclInstruction::Ble { location, rx, ry } => write!(f, "ble {} {} {}", location, rx, ry),
 
             UrclInstruction::Brg { location, rx, ry } => write!(f, "brg {} {} {}", location, rx, ry),
@@ -893,7 +893,7 @@ impl InstructionSelector for UrclSelector {
                     }
 
                     gen.push_instruction(UrclInstruction::Cal { location: Location::Function(id) });
-                    
+
                     for rd in save_regs.into_iter() {
                         gen.push_instruction(UrclInstruction::Pop { rd });
                     }
