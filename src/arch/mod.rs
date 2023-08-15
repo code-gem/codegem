@@ -1,4 +1,9 @@
-use std::{collections::HashMap, fmt::Display, marker::PhantomData, io::{Write, self}};
+use std::{
+    collections::HashMap,
+    fmt::Display,
+    io::{self, Write},
+    marker::PhantomData,
+};
 
 use crate::ir::{Linkage, Type};
 
@@ -169,7 +174,10 @@ pub trait InstructionSelector: Default {
     type Instruction: Instr;
 
     /// Selects the instructions that occur before the function starts executing.
-    fn select_pre_function_instructions(&mut self, gen: &mut VCodeGenerator<Self::Instruction, Self>);
+    fn select_pre_function_instructions(
+        &mut self,
+        gen: &mut VCodeGenerator<Self::Instruction, Self>,
+    );
 
     /// Selects an instruction to use for the given [`Operation`].
     fn select_instr(
@@ -183,7 +191,11 @@ pub trait InstructionSelector: Default {
     fn select_term(&mut self, gen: &mut VCodeGenerator<Self::Instruction, Self>, op: Terminator);
 
     /// Performs post generation transforms on the [`Function`].
-    fn post_function_generation(&mut self, func: &mut Function<Self::Instruction>, gen: &mut VCodeGenerator<Self::Instruction, Self>);
+    fn post_function_generation(
+        &mut self,
+        func: &mut Function<Self::Instruction>,
+        gen: &mut VCodeGenerator<Self::Instruction, Self>,
+    );
 
     /// Performs post generation transforms on the [`VCode`].
     fn post_generation(&mut self, vcode: &mut VCode<Self::Instruction>);
@@ -231,7 +243,11 @@ where
     /// Gets the [`VReg`] associated with the given [`Value`].
     pub fn get_vreg(&mut self, value: Value) -> VReg {
         let args = I::get_arg_regs();
-        let arg_count = self.current_function.and_then(|v| self.internal.functions.get(v)).map(|v| v.arg_count).unwrap_or(0);
+        let arg_count = self
+            .current_function
+            .and_then(|v| self.internal.functions.get(v))
+            .map(|v| v.arg_count)
+            .unwrap_or(0);
         if value.0 < arg_count {
             if value.0 < args.len() {
                 args[value.0]
@@ -270,7 +286,13 @@ where
         &self.label_map
     }
 
-    pub(crate) fn add_function(&mut self, name: &str, linkage: Linkage, id: FunctionId, arg_count: usize) {
+    pub(crate) fn add_function(
+        &mut self,
+        name: &str,
+        linkage: Linkage,
+        id: FunctionId,
+        arg_count: usize,
+    ) {
         let f = self.internal.functions.len();
         self.internal.functions.push(Function {
             name: name.to_owned(),
@@ -347,7 +369,10 @@ where
             functions: Vec::new(),
         };
         std::mem::swap(&mut internal, &mut self.internal);
-        if let Some(func) = self.current_function.and_then(|v| internal.functions.get_mut(v)) {
+        if let Some(func) = self
+            .current_function
+            .and_then(|v| internal.functions.get_mut(v))
+        {
             selector.post_function_generation(func, self);
         }
         std::mem::swap(&mut internal, &mut self.internal);

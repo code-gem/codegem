@@ -1,5 +1,4 @@
 #![doc = include_str!("../README.md")]
-
 #![deny(rustdoc::missing_doc_code_examples)]
 
 /// [`arch`] contains the default architectures supported by `codegem`. An architecture does not
@@ -14,4 +13,3 @@ pub mod ir;
 /// [`regalloc`] contains the default register allocator. One can implement their own register
 /// allocator by implementing the [`regalloc::RegisterAllocator`] trait, if one does not have a skill issue.
 pub mod regalloc;
-

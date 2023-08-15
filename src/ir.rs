@@ -1,6 +1,9 @@
 #![warn(missing_docs)]
 
-use std::{fmt::{Display, Debug}, collections::{HashSet, HashMap}};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::{Debug, Display},
+};
 
 use super::arch::{Instr, InstructionSelector, VCode, VCodeGenerator};
 
@@ -33,7 +36,12 @@ impl Module {
         let mut selector = S::default();
 
         for (i, function) in self.functions.iter().enumerate() {
-            gen.add_function(&function.name, function.linkage, FunctionId(i), function.arg_types.len());
+            gen.add_function(
+                &function.name,
+                function.linkage,
+                FunctionId(i),
+                function.arg_types.len(),
+            );
         }
 
         for (f, func) in self.functions.into_iter().enumerate() {
@@ -156,7 +164,11 @@ struct Function {
 
 impl Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "function {} {} @{}(", self.linkage, self.ret_type, self.name)?;
+        write!(
+            f,
+            "function {} {} @{}(",
+            self.linkage, self.ret_type, self.name
+        )?;
         let mut first = true;
         for (i, arg_type) in self.arg_types.iter().enumerate() {
             if first {
@@ -272,7 +284,8 @@ pub trait ToIntegerOperation {
     /// let op = 69i32.to_integer_operation_as(Type::Integer(true, 64));
     /// ```
     fn to_integer_operation_as(self, type_: Type) -> Operation
-        where Self: Sized
+    where
+        Self: Sized,
     {
         let mut op = self.to_integer_operation();
         match &mut op {
@@ -285,7 +298,10 @@ pub trait ToIntegerOperation {
 
 impl ToIntegerOperation for bool {
     fn to_integer_operation(self) -> Operation {
-        Operation::Integer(Type::Integer(false, 1), if self { vec![1] } else { vec![0] })
+        Operation::Integer(
+            Type::Integer(false, 1),
+            if self { vec![1] } else { vec![0] },
+        )
     }
 }
 
@@ -709,14 +725,16 @@ impl ModuleBuilder {
                 }
 
                 if let Terminator::Branch(_, a, b) = block.terminator {
-                    if func.blocks[a.0].predecessors.len() > 1 || func.blocks[b.0].predecessors.len() > 1 {
+                    if func.blocks[a.0].predecessors.len() > 1
+                        || func.blocks[b.0].predecessors.len() > 1
+                    {
                         return Err(ModuleCreationError {
                             func: Some(FunctionId(func_id)),
                             block: None,
                             instr: None,
                             term: None,
                             error: ModuleCreationErrorType::IncorrectGraph(a, b),
-                        })
+                        });
                     }
                 }
             }
@@ -765,23 +783,21 @@ impl ModuleBuilder {
                 let mut to_remove = Vec::new();
                 for (j, instruction) in block.instructions.iter_mut().enumerate() {
                     match instruction.operation {
-                        Operation::GetVar(var) => {
-                            match var_map.get(&(var, i)) {
-                                Some(&val) => {
-                                    instruction.operation = Operation::Identity(val);
-                                }
-
-                                None => {
-                                    return Err(ModuleCreationError {
-                                        func: Some(FunctionId(func_id)),
-                                        block: Some(BasicBlockId(i)),
-                                        instr: None,
-                                        term: None,
-                                        error: ModuleCreationErrorType::GottenBeforeSet(var),
-                                    });
-                                }
+                        Operation::GetVar(var) => match var_map.get(&(var, i)) {
+                            Some(&val) => {
+                                instruction.operation = Operation::Identity(val);
                             }
-                        }
+
+                            None => {
+                                return Err(ModuleCreationError {
+                                    func: Some(FunctionId(func_id)),
+                                    block: Some(BasicBlockId(i)),
+                                    instr: None,
+                                    term: None,
+                                    error: ModuleCreationErrorType::GottenBeforeSet(var),
+                                });
+                            }
+                        },
 
                         Operation::SetVar(var, val) => {
                             var_map.insert((var, i), val);
@@ -805,8 +821,16 @@ impl ModuleBuilder {
                 if block.predecessors.len() > 1 {
                     for instruction in block.instructions.iter_mut() {
                         if let Operation::Phi(mapping) = &mut instruction.operation {
-                            if let Some(&var) = instruction.yielded.as_ref().and_then(|v| phi_to_var_map.get(v)) {
-                                *mapping = block.predecessors.iter().filter_map(|&v| var_map.get(&(var, v.0)).map(|&u| (v, u))).collect();
+                            if let Some(&var) = instruction
+                                .yielded
+                                .as_ref()
+                                .and_then(|v| phi_to_var_map.get(v))
+                            {
+                                *mapping = block
+                                    .predecessors
+                                    .iter()
+                                    .filter_map(|&v| var_map.get(&(var, v.0)).map(|&u| (v, u)))
+                                    .collect();
                             }
                         }
                     }
@@ -887,7 +911,10 @@ impl ModuleBuilder {
     /// # }
     /// ```
     pub fn push_block(&mut self) -> Result<BasicBlockId, ModuleCreationError> {
-        if let Some(func) = self.current_function.and_then(|v| self.internal.functions.get_mut(v)) {
+        if let Some(func) = self
+            .current_function
+            .and_then(|v| self.internal.functions.get_mut(v))
+        {
             let block_id = func.blocks.len();
             func.blocks.push(BasicBlock {
                 deleted: false,
@@ -898,25 +925,21 @@ impl ModuleBuilder {
             Ok(BasicBlockId(block_id))
         } else {
             match self.current_function {
-                Some(f) => {
-                    Err(ModuleCreationError {
-                        func: Some(FunctionId(f)),
-                        block: None,
-                        instr: None,
-                        term: None,
-                        error: ModuleCreationErrorType::UnknownFunction(FunctionId(f)),
-                    })
-                }
+                Some(f) => Err(ModuleCreationError {
+                    func: Some(FunctionId(f)),
+                    block: None,
+                    instr: None,
+                    term: None,
+                    error: ModuleCreationErrorType::UnknownFunction(FunctionId(f)),
+                }),
 
-                None => {
-                    Err(ModuleCreationError {
-                        func: None,
-                        block: None,
-                        instr: None,
-                        term: None,
-                        error: ModuleCreationErrorType::NotInFunc,
-                    })
-                }
+                None => Err(ModuleCreationError {
+                    func: None,
+                    block: None,
+                    instr: None,
+                    term: None,
+                    error: ModuleCreationErrorType::NotInFunc,
+                }),
             }
         }
     }
@@ -940,11 +963,21 @@ impl ModuleBuilder {
     }
 
     fn typecheck(&self, instr: &Operation) -> Result<Type, ModuleCreationErrorType> {
-        if let Some(func) = self.current_function.and_then(|v| self.internal.functions.get(v)) {
+        if let Some(func) = self
+            .current_function
+            .and_then(|v| self.internal.functions.get(v))
+        {
             match instr {
-                Operation::Identity(v) => func.value_types.get(v.0).cloned().ok_or_else(|| ModuleCreationErrorType::UnknownValue(*v)),
+                Operation::Identity(v) => func
+                    .value_types
+                    .get(v.0)
+                    .cloned()
+                    .ok_or_else(|| ModuleCreationErrorType::UnknownValue(*v)),
                 Operation::Integer(t, _) if matches!(t, Type::Integer(_, _)) => Ok(t.clone()),
-                Operation::Integer(t, _) => Err(ModuleCreationErrorType::TypePattern(t.clone(), Type::Integer(false, 0))),
+                Operation::Integer(t, _) => Err(ModuleCreationErrorType::TypePattern(
+                    t.clone(),
+                    Type::Integer(false, 0),
+                )),
                 Operation::Add(a, b)
                 | Operation::Sub(a, b)
                 | Operation::Mul(a, b)
@@ -961,8 +994,16 @@ impl ModuleBuilder {
                 | Operation::BitAnd(a, b)
                 | Operation::BitOr(a, b)
                 | Operation::BitXor(a, b) => {
-                    let a = func.value_types.get(a.0).cloned().ok_or_else(|| ModuleCreationErrorType::UnknownValue(*a))?;
-                    let b = func.value_types.get(b.0).cloned().ok_or_else(|| ModuleCreationErrorType::UnknownValue(*b))?;
+                    let a = func
+                        .value_types
+                        .get(a.0)
+                        .cloned()
+                        .ok_or_else(|| ModuleCreationErrorType::UnknownValue(*a))?;
+                    let b = func
+                        .value_types
+                        .get(b.0)
+                        .cloned()
+                        .ok_or_else(|| ModuleCreationErrorType::UnknownValue(*b))?;
 
                     if a != b {
                         return Err(ModuleCreationErrorType::TypeMismatch(a, b));
@@ -983,7 +1024,11 @@ impl ModuleBuilder {
                             return Err(ModuleCreationErrorType::UnknownBasicBlock(b));
                         }
 
-                        let x = func.value_types.get(x.0).cloned().ok_or_else(|| ModuleCreationErrorType::UnknownValue(x))?;
+                        let x = func
+                            .value_types
+                            .get(x.0)
+                            .cloned()
+                            .ok_or_else(|| ModuleCreationErrorType::UnknownValue(x))?;
                         match t {
                             Some(u) if u == x => t = Some(x),
                             None => t = Some(x),
@@ -998,33 +1043,55 @@ impl ModuleBuilder {
                     }
                 }
 
-                Operation::GetVar(var) => {
-                    func.variables.get(var.0).map(|v| v.type_.clone()).ok_or_else(|| ModuleCreationErrorType::UnknownVariable(*var))
-                }
+                Operation::GetVar(var) => func
+                    .variables
+                    .get(var.0)
+                    .map(|v| v.type_.clone())
+                    .ok_or_else(|| ModuleCreationErrorType::UnknownVariable(*var)),
 
                 Operation::SetVar(var, val) => {
-                    let var = func.variables.get(var.0).map(|v| &v.type_).ok_or_else(|| ModuleCreationErrorType::UnknownVariable(*var))?;
-                    let val = func.value_types.get(val.0).ok_or_else(|| ModuleCreationErrorType::UnknownValue(*val))?;
+                    let var = func
+                        .variables
+                        .get(var.0)
+                        .map(|v| &v.type_)
+                        .ok_or_else(|| ModuleCreationErrorType::UnknownVariable(*var))?;
+                    let val = func
+                        .value_types
+                        .get(val.0)
+                        .ok_or_else(|| ModuleCreationErrorType::UnknownValue(*val))?;
 
                     if var == val {
                         Ok(Type::Void)
                     } else {
-                        Err(ModuleCreationErrorType::TypeMismatch(var.clone(), val.clone()))
+                        Err(ModuleCreationErrorType::TypeMismatch(
+                            var.clone(),
+                            val.clone(),
+                        ))
                     }
                 }
 
                 Operation::Call(f, args) => {
-                    let f = self.internal.functions.get(f.0).ok_or_else(|| ModuleCreationErrorType::UnknownFunction(*f))?;
+                    let f = self
+                        .internal
+                        .functions
+                        .get(f.0)
+                        .ok_or_else(|| ModuleCreationErrorType::UnknownFunction(*f))?;
 
                     if f.arg_types.len() != args.len() {
                         return Err(ModuleCreationErrorType::MismatchedFuncArgs);
                     }
 
                     for (fa, a) in f.arg_types.iter().zip(args.iter()) {
-                        let a = func.value_types.get(a.0).ok_or_else(|| ModuleCreationErrorType::UnknownValue(*a))?;
+                        let a = func
+                            .value_types
+                            .get(a.0)
+                            .ok_or_else(|| ModuleCreationErrorType::UnknownValue(*a))?;
 
                         if fa != a {
-                            return Err(ModuleCreationErrorType::TypeMismatch(fa.clone(), a.clone()));
+                            return Err(ModuleCreationErrorType::TypeMismatch(
+                                fa.clone(),
+                                a.clone(),
+                            ));
                         }
                     }
 
@@ -1034,7 +1101,10 @@ impl ModuleBuilder {
                 Operation::CallIndirect(_, _) => todo!(),
 
                 Operation::Load(ptr) => {
-                    let ptr = func.value_types.get(ptr.0).ok_or_else(|| ModuleCreationErrorType::UnknownValue(*ptr))?;
+                    let ptr = func
+                        .value_types
+                        .get(ptr.0)
+                        .ok_or_else(|| ModuleCreationErrorType::UnknownValue(*ptr))?;
                     if let Type::Pointer(t) = ptr {
                         Ok((**t).clone())
                     } else {
@@ -1043,41 +1113,64 @@ impl ModuleBuilder {
                 }
 
                 Operation::Store(ptr, val) => {
-                    let ptr = func.value_types.get(ptr.0).ok_or_else(|| ModuleCreationErrorType::UnknownValue(*ptr))?;
-                    let val = func.value_types.get(val.0).ok_or_else(|| ModuleCreationErrorType::UnknownValue(*val))?;
+                    let ptr = func
+                        .value_types
+                        .get(ptr.0)
+                        .ok_or_else(|| ModuleCreationErrorType::UnknownValue(*ptr))?;
+                    let val = func
+                        .value_types
+                        .get(val.0)
+                        .ok_or_else(|| ModuleCreationErrorType::UnknownValue(*val))?;
                     match ptr {
                         Type::Pointer(t) if **t == *val => Ok(Type::Void),
-                        Type::Pointer(t) => Err(ModuleCreationErrorType::TypeMismatch((**t).clone(), val.clone())),
+                        Type::Pointer(t) => Err(ModuleCreationErrorType::TypeMismatch(
+                            (**t).clone(),
+                            val.clone(),
+                        )),
                         _ => Err(ModuleCreationErrorType::PointerOpOnNonpointer(ptr.clone())),
                     }
                 }
 
                 Operation::Bitcast(type_, v) => {
-                    let v = func.value_types.get(v.0).ok_or_else(|| ModuleCreationErrorType::UnknownValue(*v))?;
+                    let v = func
+                        .value_types
+                        .get(v.0)
+                        .ok_or_else(|| ModuleCreationErrorType::UnknownValue(*v))?;
 
                     match (type_, v) {
                         (Type::Integer(_, w1), Type::Integer(_, w2)) if w1 == w2 => (),
                         (Type::Pointer(_), Type::Integer(_, _)) => (),
                         (Type::Integer(_, _), Type::Pointer(_)) => (),
                         (Type::Pointer(_), Type::Pointer(_)) => (),
-                        _ => return Err(ModuleCreationErrorType::InvalidBitcast(type_.clone(), v.clone())),
+                        _ => {
+                            return Err(ModuleCreationErrorType::InvalidBitcast(
+                                type_.clone(),
+                                v.clone(),
+                            ))
+                        }
                     }
 
                     Ok(type_.clone())
                 }
 
-                Operation::BitExtend(type_, v)
-                | Operation::BitReduce(type_, v) => {
-                    let v = func.value_types.get(v.0).ok_or_else(|| ModuleCreationErrorType::UnknownValue(*v))?;
+                Operation::BitExtend(type_, v) | Operation::BitReduce(type_, v) => {
+                    let v = func
+                        .value_types
+                        .get(v.0)
+                        .ok_or_else(|| ModuleCreationErrorType::UnknownValue(*v))?;
 
                     match (type_, v) {
                         (Type::Integer(_, _), Type::Integer(_, _)) => (),
-                        _ => return Err(ModuleCreationErrorType::InvalidBitwidthChange(type_.clone(), v.clone()))
+                        _ => {
+                            return Err(ModuleCreationErrorType::InvalidBitwidthChange(
+                                type_.clone(),
+                                v.clone(),
+                            ))
+                        }
                     }
 
                     Ok(type_.clone())
                 }
-
             }
         } else {
             Err(ModuleCreationErrorType::NotInFunc)
@@ -1096,7 +1189,10 @@ impl ModuleBuilder {
     /// builder.push_instruction(69i32.to_integer_operation())?;
     /// # Ok(())
     /// # }
-    pub fn push_instruction(&mut self, instr: Operation) -> Result<Option<Value>, ModuleCreationError> {
+    pub fn push_instruction(
+        &mut self,
+        instr: Operation,
+    ) -> Result<Option<Value>, ModuleCreationError> {
         let type_ = match self.typecheck(&instr) {
             Ok(t) => t,
             Err(error) => {
@@ -1110,7 +1206,10 @@ impl ModuleBuilder {
             }
         };
 
-        if let Some(func) = self.current_function.and_then(|v| self.internal.functions.get_mut(v)) {
+        if let Some(func) = self
+            .current_function
+            .and_then(|v| self.internal.functions.get_mut(v))
+        {
             let yielded = if let Type::Void = type_ {
                 None
             } else {
@@ -1129,48 +1228,40 @@ impl ModuleBuilder {
                 Ok(yielded)
             } else {
                 match (self.current_function, self.current_block) {
-                    (Some(f), Some(b))=> {
-                        Err(ModuleCreationError {
-                            func: Some(FunctionId(f)),
-                            block: Some(BasicBlockId(b)),
-                            instr: Some(instr),
-                            term: None,
-                            error: ModuleCreationErrorType::UnknownBasicBlock(BasicBlockId(b)),
-                        })
-                    }
+                    (Some(f), Some(b)) => Err(ModuleCreationError {
+                        func: Some(FunctionId(f)),
+                        block: Some(BasicBlockId(b)),
+                        instr: Some(instr),
+                        term: None,
+                        error: ModuleCreationErrorType::UnknownBasicBlock(BasicBlockId(b)),
+                    }),
 
-                    _ => {
-                        Err(ModuleCreationError {
-                            func: self.current_function.map(FunctionId),
-                            block: None,
-                            instr: Some(instr),
-                            term: None,
-                            error: ModuleCreationErrorType::NotInBlock,
-                        })
-                    }
+                    _ => Err(ModuleCreationError {
+                        func: self.current_function.map(FunctionId),
+                        block: None,
+                        instr: Some(instr),
+                        term: None,
+                        error: ModuleCreationErrorType::NotInBlock,
+                    }),
                 }
             }
         } else {
             match self.current_function {
-                Some(f) => {
-                    Err(ModuleCreationError {
-                        func: Some(FunctionId(f)),
-                        block: None,
-                        instr: Some(instr),
-                        term: None,
-                        error: ModuleCreationErrorType::UnknownFunction(FunctionId(f)),
-                    })
-                }
+                Some(f) => Err(ModuleCreationError {
+                    func: Some(FunctionId(f)),
+                    block: None,
+                    instr: Some(instr),
+                    term: None,
+                    error: ModuleCreationErrorType::UnknownFunction(FunctionId(f)),
+                }),
 
-                None => {
-                    Err(ModuleCreationError {
-                        func: None,
-                        block: None,
-                        instr: Some(instr),
-                        term: None,
-                        error: ModuleCreationErrorType::NotInFunc,
-                    })
-                }
+                None => Err(ModuleCreationError {
+                    func: None,
+                    block: None,
+                    instr: Some(instr),
+                    term: None,
+                    error: ModuleCreationErrorType::NotInFunc,
+                }),
             }
         }
     }
@@ -1185,18 +1276,23 @@ impl ModuleBuilder {
     /// # Ok(())
     /// # }
     pub fn set_terminator(&mut self, terminator: Terminator) -> Result<(), ModuleCreationError> {
-        if let Some(func) = self.current_function.and_then(|v| self.internal.functions.get_mut(v)) {
+        if let Some(func) = self
+            .current_function
+            .and_then(|v| self.internal.functions.get_mut(v))
+        {
             match terminator {
                 Terminator::NoTerminator => (),
                 Terminator::ReturnVoid => (),
                 Terminator::Return(v) => {
-                    func.value_types.get(v.0).ok_or_else(|| ModuleCreationError {
-                        func: self.current_function.map(FunctionId),
-                        block: self.current_block.map(BasicBlockId),
-                        instr: None,
-                        term: Some(terminator.clone()),
-                        error: ModuleCreationErrorType::UnknownValue(v),
-                    })?;
+                    func.value_types
+                        .get(v.0)
+                        .ok_or_else(|| ModuleCreationError {
+                            func: self.current_function.map(FunctionId),
+                            block: self.current_block.map(BasicBlockId),
+                            instr: None,
+                            term: Some(terminator.clone()),
+                            error: ModuleCreationErrorType::UnknownValue(v),
+                        })?;
                 }
 
                 Terminator::Jump(b) => {
@@ -1210,13 +1306,15 @@ impl ModuleBuilder {
                 }
 
                 Terminator::Branch(v, t, f) => {
-                    func.value_types.get(v.0).ok_or_else(|| ModuleCreationError {
-                        func: self.current_function.map(FunctionId),
-                        block: self.current_block.map(BasicBlockId),
-                        instr: None,
-                        term: Some(terminator.clone()),
-                        error: ModuleCreationErrorType::UnknownValue(v),
-                    })?;
+                    func.value_types
+                        .get(v.0)
+                        .ok_or_else(|| ModuleCreationError {
+                            func: self.current_function.map(FunctionId),
+                            block: self.current_block.map(BasicBlockId),
+                            instr: None,
+                            term: Some(terminator.clone()),
+                            error: ModuleCreationErrorType::UnknownValue(v),
+                        })?;
                     func.blocks.get(t.0).ok_or_else(|| ModuleCreationError {
                         func: self.current_function.map(FunctionId),
                         block: self.current_block.map(BasicBlockId),
@@ -1239,48 +1337,40 @@ impl ModuleBuilder {
                 Ok(())
             } else {
                 match (self.current_function, self.current_block) {
-                    (Some(f), Some(b))=> {
-                        Err(ModuleCreationError {
-                            func: Some(FunctionId(f)),
-                            block: Some(BasicBlockId(b)),
-                            instr: None,
-                            term: None,
-                            error: ModuleCreationErrorType::UnknownBasicBlock(BasicBlockId(b)),
-                        })
-                    }
+                    (Some(f), Some(b)) => Err(ModuleCreationError {
+                        func: Some(FunctionId(f)),
+                        block: Some(BasicBlockId(b)),
+                        instr: None,
+                        term: None,
+                        error: ModuleCreationErrorType::UnknownBasicBlock(BasicBlockId(b)),
+                    }),
 
-                    _ => {
-                        Err(ModuleCreationError {
-                            func: self.current_function.map(FunctionId),
-                            block: None,
-                            instr: None,
-                            term: None,
-                            error: ModuleCreationErrorType::NotInBlock,
-                        })
-                    }
+                    _ => Err(ModuleCreationError {
+                        func: self.current_function.map(FunctionId),
+                        block: None,
+                        instr: None,
+                        term: None,
+                        error: ModuleCreationErrorType::NotInBlock,
+                    }),
                 }
             }
         } else {
             match self.current_function {
-                Some(f) => {
-                    Err(ModuleCreationError {
-                        func: Some(FunctionId(f)),
-                        block: None,
-                        instr: None,
-                        term: None,
-                        error: ModuleCreationErrorType::UnknownFunction(FunctionId(f)),
-                    })
-                }
+                Some(f) => Err(ModuleCreationError {
+                    func: Some(FunctionId(f)),
+                    block: None,
+                    instr: None,
+                    term: None,
+                    error: ModuleCreationErrorType::UnknownFunction(FunctionId(f)),
+                }),
 
-                None => {
-                    Err(ModuleCreationError {
-                        func: None,
-                        block: None,
-                        instr: None,
-                        term: None,
-                        error: ModuleCreationErrorType::NotInFunc,
-                    })
-                }
+                None => Err(ModuleCreationError {
+                    func: None,
+                    block: None,
+                    instr: None,
+                    term: None,
+                    error: ModuleCreationErrorType::NotInFunc,
+                }),
             }
         }
     }
@@ -1299,8 +1389,15 @@ impl ModuleBuilder {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn push_variable(&mut self, name: &str, type_: &Type) -> Result<VariableId, ModuleCreationError> {
-        if let Some(func) = self.current_function.and_then(|v| self.internal.functions.get_mut(v)) {
+    pub fn push_variable(
+        &mut self,
+        name: &str,
+        type_: &Type,
+    ) -> Result<VariableId, ModuleCreationError> {
+        if let Some(func) = self
+            .current_function
+            .and_then(|v| self.internal.functions.get_mut(v))
+        {
             let id = func.variables.len();
             func.variables.push(Variable {
                 name: name.to_owned(),
@@ -1309,25 +1406,21 @@ impl ModuleBuilder {
             Ok(VariableId(id))
         } else {
             match self.current_function {
-                Some(f) => {
-                    Err(ModuleCreationError {
-                        func: Some(FunctionId(f)),
-                        block: None,
-                        instr: None,
-                        term: None,
-                        error: ModuleCreationErrorType::UnknownFunction(FunctionId(f)),
-                    })
-                }
+                Some(f) => Err(ModuleCreationError {
+                    func: Some(FunctionId(f)),
+                    block: None,
+                    instr: None,
+                    term: None,
+                    error: ModuleCreationErrorType::UnknownFunction(FunctionId(f)),
+                }),
 
-                None => {
-                    Err(ModuleCreationError {
-                        func: None,
-                        block: None,
-                        instr: None,
-                        term: None,
-                        error: ModuleCreationErrorType::NotInFunc,
-                    })
-                }
+                None => Err(ModuleCreationError {
+                    func: None,
+                    block: None,
+                    instr: None,
+                    term: None,
+                    error: ModuleCreationErrorType::NotInFunc,
+                }),
             }
         }
     }

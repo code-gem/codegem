@@ -1,4 +1,7 @@
-use std::{collections::{HashMap, HashSet}, ops::Range};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+};
 
 use super::arch::{Instr, VReg};
 
@@ -110,7 +113,9 @@ impl RegisterAllocator for RegAlloc {
     {
         for (i, ni) in self.nodes.iter().enumerate() {
             for (j, nj) in self.nodes.iter().enumerate().skip(i) {
-                if ni.live_range.start <= nj.live_range.end && nj.live_range.start <= ni.live_range.end {
+                if ni.live_range.start <= nj.live_range.end
+                    && nj.live_range.start <= ni.live_range.end
+                {
                     self.edges.insert((i, j));
                 }
             }
@@ -126,9 +131,7 @@ impl RegisterAllocator for RegAlloc {
         while stack.len() != self.nodes.len() {
             let mut pushed_to_stack = false;
             for (i, node) in self.nodes.iter_mut().enumerate() {
-                if !node.in_stack
-                    && (node.edge_count < regs.len() && node.colour.is_none())
-                {
+                if !node.in_stack && (node.edge_count < regs.len() && node.colour.is_none()) {
                     node.in_stack = true;
                     stack.push(i);
                     pushed_to_stack = true;
