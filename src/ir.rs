@@ -1453,7 +1453,7 @@ impl ModuleBuilder {
         self.internal
             .functions
             .get(func.0)
-            .map(|f| (0..f.arg_types.len()).into_iter().map(VariableId).collect())
+            .map(|f| (0..f.arg_types.len()).map(VariableId).collect())
     }
 
     /// Gets the currently selected basic block.
@@ -1468,7 +1468,7 @@ impl ModuleBuilder {
     /// ```
     pub fn get_block(&self) -> Option<BasicBlockId> {
         if self.get_function().is_some() {
-            self.current_block.map(|b| BasicBlockId(b))
+            self.current_block.map(BasicBlockId)
         } else {
             None
         }

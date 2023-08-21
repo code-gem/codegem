@@ -312,8 +312,8 @@ where
         self.vreg_index = 0;
     }
 
-    pub(crate) fn set_value_to_type_map(&mut self, map: &Vec<Type>) {
-        self.value_type_mapping = map.clone();
+    pub(crate) fn set_value_to_type_map(&mut self, map: &[Type]) {
+        self.value_type_mapping = map.to_owned();
     }
 
     pub(crate) fn push_label(&mut self, id: BasicBlockId) {
